@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 优化浮动坞为中心对称向两侧展开并支持点击触发", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792123105.3443024, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 实现浮动坞四边缘磁吸自适应与横竖版排版切换", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792123361.6427886, "duration_ms": 0}}

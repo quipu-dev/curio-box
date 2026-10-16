@@ -52,7 +52,6 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(artifact.meta.name);
-  const [editFilename, setEditFilename] = useState(artifact.meta.filename);
   const [showCodePreview, setShowCodePreview] = useState(false);
 
   // 评分交互
@@ -104,18 +103,27 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 保存重命名
+  // 保存重命名（方案 A：工件名称严格对应文件名）
   const handleSaveRename = async () => {
-    if (!editName.trim()) {
+    const trimmed = editName.trim();
+    if (!trimmed) {
       toast.warn('工件名称不能为空');
       return;
     }
-    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(editFilename);
+
+    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(trimmed);
     const otherFiles = existingFilenames.filter((f) => f !== artifact.meta.filename);
     const uniqueFile = TitleSanitizerEngine.deduplicateFilename(safeFile, otherFiles);
+    const newDisplayName = uniqueFile.replace(/\.html$/, '');
+
+    // 未做任何实质性修改时，平滑退出编辑态
+    if (uniqueFile === artifact.meta.filename && newDisplayName === artifact.meta.name) {
+      setIsEditingName(false);
+      return;
+    }
 
     try {
-      await onRename(artifact.meta.filename, uniqueFile, editName.trim());
+      await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
       setIsEditingName(false);
       toast.success('工件重命名成功');
     } catch (err: unknown) {
@@ -197,37 +205,32 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
           <div className="bg-background border border-border p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
             <div className="flex-1 min-w-0">
               {isEditingName ? (
-                <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveRename();
+                      if (e.key === 'Escape') setIsEditingName(false);
+                    }}
                     placeholder="工件名称"
-                    className="bg-surface border border-sky-400 px-2.5 py-1 rounded text-sm text-main outline-none font-sans font-semibold"
+                    className="bg-surface border border-sky-400 px-2.5 py-1 rounded text-sm text-main outline-none font-sans font-semibold flex-1"
                   />
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={editFilename}
-                      onChange={(e) => setEditFilename(e.target.value)}
-                      placeholder="文件名 (.html)"
-                      className="bg-surface border border-border px-2 py-0.5 rounded text-[11px] text-muted outline-none flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveRename}
-                      className="px-2.5 py-0.5 bg-sky-500 text-black font-semibold rounded text-[11px] hover:opacity-90"
-                    >
-                      保存
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      className="px-2 py-0.5 text-muted hover:text-main text-[11px]"
-                    >
-                      取消
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveRename}
+                    className="px-3 py-1 bg-sky-500 text-black font-semibold rounded text-xs hover:opacity-90 transition-opacity"
+                  >
+                    保存
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName(false)}
+                    className="px-2 py-1 text-muted hover:text-main text-xs transition-colors"
+                  >
+                    取消
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -238,7 +241,6 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
                     type="button"
                     onClick={() => {
                       setEditName(artifact.meta.name);
-                      setEditFilename(artifact.meta.filename);
                       setIsEditingName(true);
                     }}
                     className="p-1 text-muted hover:text-main rounded hover:bg-surface"

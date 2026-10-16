@@ -1,17 +1,7 @@
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
-import {
-  Code2,
-  Eye,
-  EyeOff,
-  FileCode,
-  Layers,
-  Save,
-  Sparkles,
-  Tag as TagIcon,
-  X,
-} from 'lucide-react';
+import { Code2, Eye, EyeOff, FileCode, Save, Sparkles, Tag as TagIcon, X } from 'lucide-react';
 import type React from 'react';
 import { useMemo, useRef, useState } from 'react';
 
@@ -39,25 +29,12 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   const [artifactName, setArtifactName] = useState<string>(() =>
     TitleSanitizerEngine.extractTitle(initialCode),
   );
-  const [filename, setFilename] = useState<string>(() => {
-    const extracted = TitleSanitizerEngine.extractTitle(initialCode);
-    const candidateFile = TitleSanitizerEngine.toSafeHtmlFilename(extracted);
-    return TitleSanitizerEngine.deduplicateFilename(candidateFile, existingFilenames);
-  });
   const [rawTagsInput, setRawTagsInput] = useState<string>('形态:原生html 状态:新建');
   const [showPreview, setShowPreview] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // 修改工件名时，联动更新安全文件名建议
-  const handleNameChange = (val: string) => {
-    setArtifactName(val);
-    const candidate = TitleSanitizerEngine.toSafeHtmlFilename(val);
-    const unique = TitleSanitizerEngine.deduplicateFilename(candidate, existingFilenames);
-    setFilename(unique);
-  };
 
   // 支持 Tab 键缩进 2 空格
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -88,14 +65,11 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
     return sourceCode.split('\n').length;
   }, [sourceCode]);
 
-  // 提交保存落盘
+  // 提交保存落盘（方案 A：工件名称严格映射文件名）
   const handlePerformSave = async () => {
-    if (!artifactName.trim()) {
+    const trimmedName = artifactName.trim();
+    if (!trimmedName) {
       setErrorMsg('工件名称不能为空');
-      return;
-    }
-    if (!filename.trim()) {
-      setErrorMsg('物理文件名不能为空');
       return;
     }
     if (!sourceCode.trim()) {
@@ -103,7 +77,10 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
       return;
     }
 
-    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(filename);
+    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(trimmedName);
+    const uniqueFile = TitleSanitizerEngine.deduplicateFilename(safeFile, existingFilenames);
+    const finalName = uniqueFile.replace(/\.html$/, '');
+
     const parsedTags = rawTagsInput
       .split(/\s+/)
       .map((t) => t.trim())
@@ -113,9 +90,9 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
       setIsSaving(true);
       setErrorMsg('');
       await onSave({
-        filename: safeFile,
+        filename: uniqueFile,
         content: sourceCode,
-        name: artifactName.trim(),
+        name: finalName,
         tags: parsedTags,
       });
       onClose();
@@ -175,41 +152,28 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
           </div>
         </header>
 
-        {/* 元属性配置表单栏 */}
-        <div className="bg-surface border-b border-border p-3 md:px-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+        {/* 元属性配置表单栏（方案 A：统一工件名称与物理文件映射） */}
+        <div className="bg-surface border-b border-border p-3 md:px-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
           <div className="flex flex-col gap-1">
             <label
               htmlFor="composer-artifact-name"
-              className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
+              className="text-[10px] uppercase text-muted tracking-wider flex items-center justify-between"
             >
-              <FileCode className="w-3 h-3 text-sky-400" />
-              <span>工件名称</span>
+              <span className="flex items-center gap-1">
+                <FileCode className="w-3 h-3 text-sky-400" />
+                <span>工件名称</span>
+              </span>
+              <span className="text-[10px] text-muted font-normal">
+                文件: {TitleSanitizerEngine.toSafeHtmlFilename(artifactName || 'artifact')}
+              </span>
             </label>
             <input
               id="composer-artifact-name"
               type="text"
               value={artifactName}
-              onChange={(e) => handleNameChange(e.target.value)}
+              onChange={(e) => setArtifactName(e.target.value)}
               placeholder="输入工件名称..."
               className="bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-sky-400 font-sans"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="composer-filename"
-              className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
-            >
-              <Layers className="w-3 h-3 text-amber-400" />
-              <span>保存文件名 (.html)</span>
-            </label>
-            <input
-              id="composer-filename"
-              type="text"
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
-              placeholder="example.html"
-              className="bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-amber-400"
             />
           </div>
 

@@ -284,24 +284,54 @@ export class GalleryStorage {
 
     const oldBase = oldFilename.replace(/\.html$/, '');
     const newBase = newFilename.replace(/\.html$/, '');
+    const resolvedDisplayName = newName || newBase;
+
+    // 绝对安全防御：若新旧文件名完全一致，杜绝触发自删逻辑，直接安全返回
+    if (oldFilename === newFilename) {
+      const allMeta = await this.readAllMeta();
+      const existing = allMeta[oldFilename];
+      if (existing && existing.name !== resolvedDisplayName) {
+        existing.name = resolvedDisplayName;
+        existing.updatedAt = new Date().toISOString();
+        await this.saveMeta(existing);
+      }
+      const fileHandle = await this.dirHandle.getFileHandle(oldFilename);
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      const posterBlobUrl = await this.loadPosterBlobUrl(oldFilename);
+      return {
+        meta: existing || {
+          id: `art_${Math.random().toString(16).slice(2, 10)}`,
+          name: resolvedDisplayName,
+          filename: oldFilename,
+          tags: ['形态:原生html'],
+          currentRevision: 1,
+          updatedAt: new Date().toISOString(),
+        },
+        sourceCode: content,
+        posterBlobUrl,
+      };
+    }
 
     // 1. 读取原工件内容
     const oldFileHandle = await this.dirHandle.getFileHandle(oldFilename);
     const oldFile = await oldFileHandle.getFile();
     const content = await oldFile.text();
 
-    // 2. 写入新文件并移除旧文件
+    // 2. 写入新文件并在确认路径相异后安全移除旧文件
     const newFileHandle = await this.dirHandle.getFileHandle(newFilename, { create: true });
     const newWritable = await newFileHandle.createWritable();
     await newWritable.write(content);
     await newWritable.close();
 
-    try {
-      await (
-        this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
-      ).removeEntry(oldFilename);
-    } catch (err) {
-      console.warn('移除旧文件失败:', err);
+    if (oldFilename !== newFilename) {
+      try {
+        await (
+          this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
+        ).removeEntry(oldFilename);
+      } catch (err) {
+        console.warn('移除旧文件失败:', err);
+      }
     }
 
     // 3. 迁移底片目录 (negatives)
@@ -326,11 +356,13 @@ export class GalleryStorage {
             await destWritable.close();
           }
         }
-        await (
-          negativesDir as unknown as {
-            removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
-          }
-        ).removeEntry(oldBase, { recursive: true });
+        if (oldBase !== newBase) {
+          await (
+            negativesDir as unknown as {
+              removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
+            }
+          ).removeEntry(oldBase, { recursive: true });
+        }
       } catch {
         // 原底片不存在时忽略
       }
@@ -344,9 +376,11 @@ export class GalleryStorage {
         const pWritable = await newPosterHandle.createWritable();
         await pWritable.write(await oldPosterFile.arrayBuffer());
         await pWritable.close();
-        await (
-          postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
-        ).removeEntry(`${oldBase}.webp`);
+        if (oldBase !== newBase) {
+          await (
+            postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
+          ).removeEntry(`${oldBase}.webp`);
+        }
       } catch {
         // 无封面时忽略
       }

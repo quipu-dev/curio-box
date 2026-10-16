@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 interface ArtifactComposerModalProps {
   initialCode: string;
@@ -33,23 +33,20 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   onSave,
 }) => {
   const [sourceCode, setSourceCode] = useState<string>(initialCode);
-  const [artifactName, setArtifactName] = useState<string>('');
-  const [filename, setFilename] = useState<string>('');
+  const [artifactName, setArtifactName] = useState<string>(() =>
+    TitleSanitizerEngine.extractTitle(initialCode),
+  );
+  const [filename, setFilename] = useState<string>(() => {
+    const extracted = TitleSanitizerEngine.extractTitle(initialCode);
+    const candidateFile = TitleSanitizerEngine.toSafeHtmlFilename(extracted);
+    return TitleSanitizerEngine.deduplicateFilename(candidateFile, existingFilenames);
+  });
   const [rawTagsInput, setRawTagsInput] = useState<string>('形态:原生html 状态:新建');
   const [showPreview, setShowPreview] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // 初始化时从代码中自动嗅探标题并清洗安全文件名
-  useEffect(() => {
-    const extracted = TitleSanitizerEngine.extractTitle(initialCode);
-    setArtifactName(extracted);
-    const candidateFile = TitleSanitizerEngine.toSafeHtmlFilename(extracted);
-    const uniqueFile = TitleSanitizerEngine.deduplicateFilename(candidateFile, existingFilenames);
-    setFilename(uniqueFile);
-  }, [initialCode, existingFilenames]);
 
   // 修改工件名时，联动更新安全文件名建议
   const handleNameChange = (val: string) => {

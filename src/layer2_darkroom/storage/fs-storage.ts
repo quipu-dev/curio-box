@@ -162,9 +162,6 @@ export class GalleryStorage {
         const file = await (entry as FileSystemFileHandle).getFile();
         const text = await file.text();
 
-        // 自动固化创世底片
-        await this.ensureGenesisSnapshot(entry.name, text);
-
         const meta = metaMap[entry.name] || {
           id: `art_${Math.random().toString(16).slice(2, 10)}`,
           name: entry.name.replace(/\.html$/, ''),

@@ -20,12 +20,12 @@ function MainApp() {
   const { toast } = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏放映中的工件
-  const [stageArtifact, setStageArtifact] = useState<Artifact | null>(null);
-  // 独立暗房工作台中的工件
-  const [studioArtifact, setStudioArtifact] = useState<Artifact | null>(null);
-  // 标本档案检视中的工件
-  const [inspectingArtifact, setInspectingArtifact] = useState<Artifact | null>(null);
+  // 网页全屏放映中的工件物理文件名 (SSoT 单一事实来源)
+  const [stageFilename, setStageFilename] = useState<string | null>(null);
+  // 独立暗房工作台中的工件物理文件名
+  const [studioFilename, setStudioFilename] = useState<string | null>(null);
+  // 标本档案检视中的工件物理文件名
+  const [inspectingFilename, setInspectingFilename] = useState<string | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -118,6 +118,20 @@ function MainApp() {
   const existingFilenames = useMemo(() => {
     return artifacts.map((a) => a.meta.filename);
   }, [artifacts]);
+
+  // 派生当前活动状态工件，彻底杜绝对象分裂与同步竞争
+  const stageArtifact = useMemo(
+    () => artifacts.find((a) => a.meta.filename === stageFilename) ?? null,
+    [artifacts, stageFilename],
+  );
+  const studioArtifact = useMemo(
+    () => artifacts.find((a) => a.meta.filename === studioFilename) ?? null,
+    [artifacts, studioFilename],
+  );
+  const inspectingArtifact = useMemo(
+    () => artifacts.find((a) => a.meta.filename === inspectingFilename) ?? null,
+    [artifacts, inspectingFilename],
+  );
 
   // 从剪贴板导入
   const handleImportFromClipboard = async () => {
@@ -223,15 +237,6 @@ function MainApp() {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
     );
-    if (stageArtifact?.meta.filename === updated.meta.filename) {
-      setStageArtifact(updated);
-    }
-    if (studioArtifact?.meta.filename === updated.meta.filename) {
-      setStudioArtifact(updated);
-    }
-    if (inspectingArtifact?.meta.filename === updated.meta.filename) {
-      setInspectingArtifact(updated);
-    }
   };
 
   // 标本元数据修改联动
@@ -240,9 +245,6 @@ function MainApp() {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
     );
-    if (inspectingArtifact?.meta.filename === filename) {
-      setInspectingArtifact((prev) => (prev ? { ...prev, meta: updatedMeta } : null));
-    }
   };
 
   const handleUpdateRating = async (filename: string, newRating: number) => {
@@ -250,9 +252,6 @@ function MainApp() {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
     );
-    if (inspectingArtifact?.meta.filename === filename) {
-      setInspectingArtifact((prev) => (prev ? { ...prev, meta: updatedMeta } : null));
-    }
   };
 
   // 标本重命名
@@ -265,14 +264,14 @@ function MainApp() {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === oldFilename ? newArt : item)),
     );
-    if (inspectingArtifact?.meta.filename === oldFilename) {
-      setInspectingArtifact(newArt);
+    if (inspectingFilename === oldFilename) {
+      setInspectingFilename(newFilename);
     }
-    if (stageArtifact?.meta.filename === oldFilename) {
-      setStageArtifact(newArt);
+    if (stageFilename === oldFilename) {
+      setStageFilename(newFilename);
     }
-    if (studioArtifact?.meta.filename === oldFilename) {
-      setStudioArtifact(newArt);
+    if (studioFilename === oldFilename) {
+      setStudioFilename(newFilename);
     }
   };
 
@@ -280,8 +279,14 @@ function MainApp() {
   const handleDeleteArtifact = async (filename: string) => {
     await galleryStorage.deleteArtifact(filename);
     setArtifacts((prev) => prev.filter((item) => item.meta.filename !== filename));
-    if (inspectingArtifact?.meta.filename === filename) {
-      setInspectingArtifact(null);
+    if (inspectingFilename === filename) {
+      setInspectingFilename(null);
+    }
+    if (stageFilename === filename) {
+      setStageFilename(null);
+    }
+    if (studioFilename === filename) {
+      setStudioFilename(null);
     }
   };
 
@@ -320,9 +325,9 @@ function MainApp() {
               <ArtifactCard
                 key={artifact.meta.filename}
                 artifact={artifact}
-                onOpenStage={(art) => setStageArtifact(art)}
-                onOpenStudio={(art) => setStudioArtifact(art)}
-                onOpenInspector={(art) => setInspectingArtifact(art)}
+                onOpenStage={(art) => setStageFilename(art.meta.filename)}
+                onOpenStudio={(art) => setStudioFilename(art.meta.filename)}
+                onOpenInspector={(art) => setInspectingFilename(art.meta.filename)}
               />
             ))}
           </div>
@@ -338,10 +343,10 @@ function MainApp() {
       {stageArtifact && (
         <FullscreenStage
           artifact={stageArtifact}
-          onClose={() => setStageArtifact(null)}
+          onClose={() => setStageFilename(null)}
           onOpenDarkroom={(art) => {
-            setStageArtifact(null);
-            setStudioArtifact(art);
+            setStageFilename(null);
+            setStudioFilename(art.meta.filename);
           }}
           onUpdateArtifact={handleUpdateArtifact}
         />
@@ -351,10 +356,10 @@ function MainApp() {
       {studioArtifact && (
         <DarkroomStudio
           artifact={studioArtifact}
-          onBackToGallery={() => setStudioArtifact(null)}
+          onBackToGallery={() => setStudioFilename(null)}
           onOpenStage={(art) => {
-            setStudioArtifact(null);
-            setStageArtifact(art);
+            setStudioFilename(null);
+            setStageFilename(art.meta.filename);
           }}
           onUpdateArtifact={handleUpdateArtifact}
         />
@@ -364,9 +369,15 @@ function MainApp() {
       {inspectingArtifact && (
         <ArtifactInspectorModal
           artifact={inspectingArtifact}
-          onClose={() => setInspectingArtifact(null)}
-          onOpenStage={(art) => setStageArtifact(art)}
-          onOpenStudio={(art) => setStudioArtifact(art)}
+          onClose={() => setInspectingFilename(null)}
+          onOpenStage={(art) => {
+            setInspectingFilename(null);
+            setStageFilename(art.meta.filename);
+          }}
+          onOpenStudio={(art) => {
+            setInspectingFilename(null);
+            setStudioFilename(art.meta.filename);
+          }}
           onUpdateTags={handleUpdateTags}
           onUpdateRating={handleUpdateRating}
           onRename={handleRenameArtifact}
@@ -378,6 +389,7 @@ function MainApp() {
       {/* 工件装配台模态框 */}
       {composerInitialCode !== null && (
         <ArtifactComposerModal
+          key={composerInitialCode.slice(0, 32)}
           initialCode={composerInitialCode}
           existingFilenames={existingFilenames}
           onClose={() => setComposerInitialCode(null)}

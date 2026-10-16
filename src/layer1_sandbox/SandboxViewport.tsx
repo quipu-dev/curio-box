@@ -89,12 +89,23 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
     }
 
     let isSubscribed = true;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let currentObjectUrl: string | null = null;
+
+    const handleReadyMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === 'CURIO_STAGE_READY') {
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        if (isSubscribed) setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('message', handleReadyMessage);
     setIsLoading(true);
     setLoadingTip('正在检查资源缓存...');
 
     // 使用 AssetCacheEngine 处理并置换已缓存的 CDN 外链
     AssetCacheEngine.resolveAndWarmupHtml(htmlPayload, (stats) => {
-      if (stats.total > 0) {
+      if (isSubscribed && stats.total > 0) {
         setLoadingTip(`资源准备就绪 (${stats.cached}/${stats.total})，正在挂载沙箱...`);
       }
     }).then(({ resolvedHtml }) => {
@@ -108,31 +119,22 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
       }
 
       const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      iframe.src = url;
+      currentObjectUrl = URL.createObjectURL(blob);
+      iframe.src = currentObjectUrl;
 
       // 兜底超时：若工件无 canvas 或未发出就绪通知，3.5s 后强制淡出加载层
-      const fallbackTimer = setTimeout(() => {
+      fallbackTimer = setTimeout(() => {
         if (isSubscribed) setIsLoading(false);
       }, 3500);
-
-      const handleReadyMessage = (ev: MessageEvent) => {
-        if (ev.data?.type === 'CURIO_STAGE_READY') {
-          clearTimeout(fallbackTimer);
-          if (isSubscribed) setIsLoading(false);
-        }
-      };
-
-      window.addEventListener('message', handleReadyMessage);
-
-      return () => {
-        isSubscribed = false;
-        clearTimeout(fallbackTimer);
-        window.removeEventListener('message', handleReadyMessage);
-        URL.revokeObjectURL(url);
-        iframe.src = 'about:blank';
-      };
     });
+
+    return () => {
+      isSubscribed = false;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      window.removeEventListener('message', handleReadyMessage);
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      iframe.src = 'about:blank';
+    };
   }, [htmlPayload, isActivated]);
 
   useEffect(() => {

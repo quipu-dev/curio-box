@@ -104,7 +104,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       x: e.clientX - position.x,
       y: e.clientY - position.y,
     };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -171,7 +171,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     isDraggingRef.current = false;
     setIsDragging(false);
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
       // 容错处理
     }

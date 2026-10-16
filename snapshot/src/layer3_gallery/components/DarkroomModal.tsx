@@ -157,18 +157,21 @@ ctx.fillStyle = '#001a33';
 \`\`\``;
 
   return (
-    <div
-      role="dialog"
+    <dialog
+      open
       aria-modal="true"
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8"
-      onClick={onClose}
+      className="fixed inset-0 m-0 p-4 md:p-8 w-full h-full max-w-none max-h-none bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center border-0 outline-none text-main"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
       }}
     >
       <div
         className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col bg-background border-r border-border h-full overflow-hidden">
           <div className="p-3 bg-surface border-b border-border flex justify-between items-center text-xs font-mono">
@@ -302,6 +305,6 @@ ctx.fillStyle = '#001a33';
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };

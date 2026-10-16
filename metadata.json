@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "checkf Capture: M biome.json, M package.json, M postcss.config.js ... and 15 more files", "type": "capture", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792122281.1544507, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 修复画廊卡片与暗房弹窗的 a11y 语义化标签与事件规范", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792122352.1532083, "duration_ms": 0}}

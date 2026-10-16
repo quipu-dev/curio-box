@@ -60,36 +60,33 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
 
       {/* 标本元数据与暗房快捷按钮 */}
       <div className="p-4 flex flex-col flex-1 justify-between gap-3">
-        <div>
-          <div className="flex justify-between items-start gap-2 mb-1">
-            <div
-              className="text-sm font-semibold text-main truncate flex-1"
-              title={artifact.meta.name}
-            >
-              {artifact.meta.name}
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => onOpenInspector(artifact)}
-                className="flex items-center gap-1 text-[11px] font-mono text-muted hover:text-main border border-border px-1.5 py-0.5 rounded hover:bg-border transition-colors"
-                title="查看标本档案与元数据"
-              >
-                <FileText className="w-3 h-3" />
-                <span>档案</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenStudio(artifact)}
-                className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
-                title="打开独立暗房工作台"
-              >
-                <Code2 className="w-3 h-3" />
-                <span>暗房</span>
-              </button>
-            </div>
+        <div className="flex justify-between items-start gap-2">
+          <div
+            className="text-sm font-semibold text-main truncate flex-1"
+            title={artifact.meta.name}
+          >
+            {artifact.meta.name}
           </div>
-          <div className="text-[11px] font-mono text-muted mb-2">{artifact.meta.filename}</div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onOpenInspector(artifact)}
+              className="flex items-center gap-1 text-[11px] font-mono text-muted hover:text-main border border-border px-1.5 py-0.5 rounded hover:bg-border transition-colors"
+              title="查看标本档案与元数据"
+            >
+              <FileText className="w-3 h-3" />
+              <span>档案</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenStudio(artifact)}
+              className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
+              title="打开独立暗房工作台"
+            >
+              <Code2 className="w-3 h-3" />
+              <span>暗房</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-1">

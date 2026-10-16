@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: A .gitignore, A LICENSE, A piconfig.json", "type": "capture", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792120754.9213338, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 落地纪元一与纪元二策展画廊与镜像暗房架构", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792121202.5902274, "duration_ms": 0}}

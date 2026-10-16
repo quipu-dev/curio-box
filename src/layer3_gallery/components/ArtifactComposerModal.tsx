@@ -1,5 +1,6 @@
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
+import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
 import {
   Code2,
   Eye,
@@ -17,6 +18,7 @@ import { useMemo, useRef, useState } from 'react';
 interface ArtifactComposerModalProps {
   initialCode: string;
   existingFilenames: string[];
+  allTags?: string[];
   onClose: () => void;
   onSave: (artifact: {
     filename: string;
@@ -29,6 +31,7 @@ interface ArtifactComposerModalProps {
 export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   initialCode,
   existingFilenames,
+  allTags = [],
   onClose,
   onSave,
 }) => {
@@ -218,13 +221,13 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               <TagIcon className="w-3 h-3 text-emerald-400" />
               <span>分类标签 (空格分隔)</span>
             </label>
-            <input
+            <TagAutocompleteInput
               id="composer-tags"
-              type="text"
               value={rawTagsInput}
-              onChange={(e) => setRawTagsInput(e.target.value)}
+              onChange={setRawTagsInput}
+              allTags={allTags}
               placeholder="形态:webgl 物理:粒子"
-              className="bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
+              className="w-full bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
             />
           </div>
         </div>

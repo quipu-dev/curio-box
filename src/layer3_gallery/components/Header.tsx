@@ -1,3 +1,4 @@
+import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
 import { Clipboard, FolderOpen, Moon, Plus, Sun } from 'lucide-react';
 import type React from 'react';
 
@@ -12,6 +13,7 @@ interface HeaderProps {
   onRequestPendingPermission?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  allTags?: string[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRequestPendingPermission,
   theme,
   onToggleTheme,
+  allTags,
 }) => {
   return (
     <header className="sticky top-0 z-10 bg-surface border-b border-border px-6 py-4 flex flex-wrap gap-4 justify-between items-center">
@@ -36,13 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex-1 max-w-xl mx-auto w-full">
-        <div className="flex items-center bg-background border border-border px-3 py-2 rounded text-sm">
-          <input
-            type="text"
-            className="w-full bg-transparent border-0 outline-none text-main font-mono text-xs placeholder:text-muted"
-            placeholder="标签检索：形态:webgl 物理:流体 -风格:粗野"
+        <div className="flex items-center bg-background border border-border px-2 py-1 rounded text-sm">
+          <TagAutocompleteInput
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={onSearchChange}
+            allTags={allTags || []}
+            placeholder="标签检索：形态:webgl 物理:流体 -风格:粗野"
+            className="w-full bg-transparent border-0 outline-none text-main font-mono text-xs placeholder:text-muted px-1 py-1"
           />
         </div>
       </div>

@@ -119,6 +119,19 @@ function MainApp() {
     return artifacts.map((a) => a.meta.filename);
   }, [artifacts]);
 
+  // 全局已知的所有标签池（用于自动补全推荐）
+  const allKnownTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const art of artifacts) {
+      for (const t of art.meta.tags) {
+        if (t.trim()) {
+          set.add(t.trim());
+        }
+      }
+    }
+    return Array.from(set);
+  }, [artifacts]);
+
   // 派生当前活动状态工件，彻底杜绝对象分裂与同步竞争
   const stageArtifact = useMemo(
     () => artifacts.find((a) => a.meta.filename === stageFilename) ?? null,
@@ -307,6 +320,7 @@ function MainApp() {
         onRequestPendingPermission={handleRequestPendingPermission}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        allTags={allKnownTags}
       />
 
       <main className="flex-1 p-6 md:p-8">
@@ -383,6 +397,7 @@ function MainApp() {
           onRename={handleRenameArtifact}
           onDelete={handleDeleteArtifact}
           existingFilenames={existingFilenames}
+          allTags={allKnownTags}
         />
       )}
 
@@ -392,6 +407,7 @@ function MainApp() {
           key={composerInitialCode.slice(0, 32)}
           initialCode={composerInitialCode}
           existingFilenames={existingFilenames}
+          allTags={allKnownTags}
           onClose={() => setComposerInitialCode(null)}
           onSave={handleSaveComposerArtifact}
         />

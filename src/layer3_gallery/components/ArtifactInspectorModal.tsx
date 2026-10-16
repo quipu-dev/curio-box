@@ -1,6 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
+import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
 import type { Artifact } from '@/types';
 import {
   Calendar,
@@ -31,6 +32,7 @@ interface ArtifactInspectorModalProps {
   onRename: (oldFilename: string, newFilename: string, newName: string) => Promise<void>;
   onDelete: (filename: string) => Promise<void>;
   existingFilenames: string[];
+  allTags?: string[];
 }
 
 export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
@@ -43,6 +45,7 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
   onRename,
   onDelete,
   existingFilenames,
+  allTags = [],
 }) => {
   const { toast } = useToast();
   const [newTagInput, setNewTagInput] = useState('');
@@ -341,23 +344,25 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2 mt-1">
-              <input
-                type="text"
-                value={newTagInput}
-                onChange={(e) => setNewTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-                placeholder="追加新标签 (例如：形态:webgl 物理:粒子)..."
-                className="flex-1 bg-surface border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
-              />
+              <div className="flex-1">
+                <TagAutocompleteInput
+                  value={newTagInput}
+                  onChange={setNewTagInput}
+                  allTags={allTags}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddTag();
+                    }
+                  }}
+                  placeholder="追加新标签 (例如：形态:webgl 物理:粒子)..."
+                  className="w-full bg-surface border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
+                />
+              </div>
               <button
                 type="button"
                 onClick={handleAddTag}
-                className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 px-3 py-1.5 rounded transition-colors text-xs font-semibold"
+                className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 px-3 py-1.5 rounded transition-colors text-xs font-semibold shrink-0"
               >
                 <Plus className="w-3 h-3" />
                 <span>添加</span>

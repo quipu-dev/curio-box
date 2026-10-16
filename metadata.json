@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 实现浮动坞位置记忆与工件目录刷新自动保持", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792123573.7854211, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "checkf Capture: M App.tsx, M fs-storage.ts, M FullscreenStage.tsx", "type": "capture", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792123635.00182, "duration_ms": 0}}

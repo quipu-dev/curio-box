@@ -61,9 +61,11 @@ export function App() {
   const handleRequestPendingPermission = async () => {
     if (!pendingHandle) return;
     try {
-      const perm = await (pendingHandle as unknown as {
-        requestPermission: (opt: { mode: string }) => Promise<PermissionState>;
-      }).requestPermission({ mode: 'readwrite' });
+      const perm = await (
+        pendingHandle as unknown as {
+          requestPermission: (opt: { mode: string }) => Promise<PermissionState>;
+        }
+      ).requestPermission({ mode: 'readwrite' });
 
       if (perm === 'granted') {
         galleryStorage.setDirectoryHandle(pendingHandle);

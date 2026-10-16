@@ -73,9 +73,11 @@ export class GalleryStorage {
 
     try {
       // 检验是否仍保有读写权限
-      const perm = await (saved as unknown as {
-        queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
-      }).queryPermission({ mode: 'readwrite' });
+      const perm = await (
+        saved as unknown as {
+          queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
+        }
+      ).queryPermission({ mode: 'readwrite' });
 
       if (perm === 'granted') {
         this.dirHandle = saved;

@@ -28,7 +28,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact, onOpenDark
         ) : (
           <div className="text-muted text-xs font-mono flex flex-col items-center gap-1">
             <span>[ 待封印快照 ]</span>
-            <span className="text-[10px] opacity-60">点击进入暗房捕获封面</span>
+            <span className="text-[10px] opacity-60">点击全屏展演并定格封面</span>
           </div>
         )}
       </div>

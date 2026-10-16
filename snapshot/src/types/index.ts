@@ -12,6 +12,13 @@ export interface Tag {
   value: string;
 }
 
+export interface NegativeLedgerEntry {
+  revision: number;
+  timestamp: string;
+  action: 'genesis' | 'patch' | 'rollback';
+  description?: string;
+}
+
 export interface NegativeRevision {
   revision: number;
   timestamp: string;

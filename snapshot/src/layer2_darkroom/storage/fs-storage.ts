@@ -1,9 +1,10 @@
-import type { Artifact, ArtifactMeta } from '@/types';
+import type { Artifact, ArtifactMeta, NegativeLedgerEntry } from '@/types';
 
 const GALLERY_DIR = '.gallery';
 const POSTERS_DIR = 'posters';
 const NEGATIVES_DIR = 'negatives';
 const META_FILE = 'meta.json';
+const LEDGER_FILE = 'ledger.json';
 const IDB_NAME = 'curio_box_meta_db';
 const IDB_STORE = 'fs_handles';
 const IDB_ACTIVE_KEY = 'active_directory_handle';
@@ -54,7 +55,6 @@ export class GalleryStorage {
 
   public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
     this.dirHandle = handle;
-    // 异步写入持久化存储
     persistHandleToIDB(handle).catch(() => {});
   }
 
@@ -72,7 +72,6 @@ export class GalleryStorage {
     }
 
     try {
-      // 检验是否仍保有读写权限
       const perm = await (
         saved as unknown as {
           queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
@@ -92,6 +91,28 @@ export class GalleryStorage {
     return this.dirHandle !== null;
   }
 
+  /**
+   * 确保工件存在 REV 1 创世底片，补齐断层
+   */
+  public async ensureGenesisSnapshot(filename: string, initialContent: string): Promise<void> {
+    if (!this.dirHandle) return;
+
+    try {
+      const existingRev1 = await this.loadNegativeRevision(filename, 1);
+      if (!existingRev1) {
+        await this.recordNegativeRevision(
+          filename,
+          1,
+          initialContent,
+          'genesis',
+          '初始导入原生底片',
+        );
+      }
+    } catch (err) {
+      console.warn('创世底片检验或写入异常:', err);
+    }
+  }
+
   public async scanArtifacts(): Promise<Artifact[]> {
     if (!this.dirHandle) {
       return this.getMockArtifacts();
@@ -103,10 +124,15 @@ export class GalleryStorage {
     const entries = (
       this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
     ).values();
+
     for await (const entry of entries) {
       if (entry.kind === 'file' && entry.name.endsWith('.html')) {
         const file = await (entry as FileSystemFileHandle).getFile();
         const text = await file.text();
+
+        // 自动固化创世底片
+        await this.ensureGenesisSnapshot(entry.name, text);
+
         const meta = metaMap[entry.name] || {
           id: `art_${Math.random().toString(16).slice(2, 10)}`,
           name: entry.name.replace(/\.html$/, ''),
@@ -133,6 +159,8 @@ export class GalleryStorage {
     filename: string,
     newContent: string,
     revision: number,
+    action: 'genesis' | 'patch' | 'rollback' = 'patch',
+    description?: string,
   ): Promise<void> {
     if (!this.dirHandle) return;
 
@@ -143,7 +171,7 @@ export class GalleryStorage {
     await writable.write(newContent);
     await writable.close();
 
-    await this.recordNegativeRevision(filename, revision, newContent);
+    await this.recordNegativeRevision(filename, revision, newContent, action, description);
   }
 
   public async savePoster(filename: string, blob: Blob): Promise<string> {
@@ -183,6 +211,8 @@ export class GalleryStorage {
     filename: string,
     revision: number,
     content: string,
+    action: 'genesis' | 'patch' | 'rollback' = 'patch',
+    description?: string,
   ): Promise<void> {
     if (!this.dirHandle) return;
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
@@ -191,6 +221,7 @@ export class GalleryStorage {
       create: true,
     });
 
+    // 写入底片快照文件
     const revHandle = await baseDir.getFileHandle(
       `rev-${String(revision).padStart(4, '0')}.snapshot`,
       { create: true },
@@ -198,6 +229,34 @@ export class GalleryStorage {
     const writable = await revHandle.createWritable();
     await writable.write(content);
     await writable.close();
+
+    // 更新底片台账 (Ledger)
+    try {
+      let ledger: NegativeLedgerEntry[] = [];
+      try {
+        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
+        const file = await ledgerFile.getFile();
+        ledger = JSON.parse(await file.text());
+      } catch {
+        ledger = [];
+      }
+
+      ledger = ledger.filter((item) => item.revision !== revision);
+      ledger.push({
+        revision,
+        timestamp: new Date().toISOString(),
+        action,
+        description: description || (action === 'genesis' ? '创世底片' : `底片快照 REV:${revision}`),
+      });
+      ledger.sort((a, b) => a.revision - b.revision);
+
+      const ledgerHandle = await baseDir.getFileHandle(LEDGER_FILE, { create: true });
+      const ledgerWritable = await ledgerHandle.createWritable();
+      await ledgerWritable.write(JSON.stringify(ledger, null, 2));
+      await ledgerWritable.close();
+    } catch (err) {
+      console.warn('更新底片台账失败:', err);
+    }
   }
 
   public async loadNegativeRevision(filename: string, revision: number): Promise<string | null> {
@@ -213,6 +272,56 @@ export class GalleryStorage {
       return await file.text();
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * 获取指定工件底片链上的所有历史修订列表
+   */
+  public async listNegativeRevisions(filename: string): Promise<NegativeLedgerEntry[]> {
+    if (!this.dirHandle) {
+      return [
+        {
+          revision: 1,
+          timestamp: new Date().toISOString(),
+          action: 'genesis',
+          description: '内置演示底片',
+        },
+      ];
+    }
+
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
+      const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
+
+      try {
+        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
+        const file = await ledgerFile.getFile();
+        const ledger: NegativeLedgerEntry[] = JSON.parse(await file.text());
+        return ledger.sort((a, b) => b.revision - a.revision);
+      } catch {
+        // 台账不存在时扫描快照文件兜底
+        const results: NegativeLedgerEntry[] = [];
+        const entries = (
+          baseDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+        ).values();
+        for await (const entry of entries) {
+          const match = entry.name.match(/^rev-(\d+)\.snapshot$/);
+          if (match) {
+            const rev = Number.parseInt(match[1], 10);
+            results.push({
+              revision: rev,
+              timestamp: new Date().toISOString(),
+              action: rev === 1 ? 'genesis' : 'patch',
+              description: rev === 1 ? '创世原生底片' : `快照 REV:${rev}`,
+            });
+          }
+        }
+        return results.sort((a, b) => b.revision - a.revision);
+      }
+    } catch {
+      return [];
     }
   }
 
@@ -251,7 +360,7 @@ export class GalleryStorage {
           name: '纳维-斯托克斯二维流体仿真',
           filename: 'fluid-simulation.html',
           tags: ['领域:图形学', '形态:webgl', '物理:流体', '模型:claude-3.5-sonnet'],
-          currentRevision: 4,
+          currentRevision: 1,
           updatedAt: '2025-02-28T12:00:00Z',
         },
         sourceCode: `<!DOCTYPE html>
@@ -281,93 +390,6 @@ export class GalleryStorage {
         ctx.arc(x, y, 12 + Math.sin(i + t) * 6, 0, Math.PI * 2);
         ctx.fillStyle = 'hsl(' + ((t * 30 + i * 10) % 360) + ', 85%, 60%)';
         ctx.fill();
-      }
-      requestAnimationFrame(render);
-    }
-    render();
-  </script>
-</body>
-</html>`,
-      },
-      {
-        meta: {
-          id: 'art_fractal',
-          name: '曼德博分形三维投影切片',
-          filename: 'mandelbulb-projection.html',
-          tags: ['领域:数学', '形态:着色器', '数学:分形', '模型:gpt-4o'],
-          currentRevision: 2,
-          updatedAt: '2025-02-28T13:30:00Z',
-        },
-        sourceCode: `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { margin: 0; background: #05050a; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
-    canvas { width: 100%; height: 100%; object-fit: contain; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 600; canvas.height = 450;
-    let angle = 0;
-    function render() {
-      ctx.fillStyle = '#05050a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      angle += 0.02;
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      for (let i = 0; i < 300; i++) {
-        const r = Math.sqrt(i) * 14;
-        const theta = i * 2.39996 + angle;
-        const x = cx + r * Math.cos(theta);
-        const y = cy + r * Math.sin(theta);
-        ctx.fillStyle = 'hsl(' + (i * 2 + angle * 50) % 360 + ', 90%, 65%)';
-        ctx.fillRect(x, y, 3, 3);
-      }
-      requestAnimationFrame(render);
-    }
-    render();
-  </script>
-</body>
-</html>`,
-      },
-      {
-        meta: {
-          id: 'art_kinetic',
-          name: '动能排版拓扑构图',
-          filename: 'kinetic-typography.html',
-          tags: ['领域:视觉', '形态:canvas2d', '风格:粗野主义'],
-          currentRevision: 1,
-          updatedAt: '2025-02-28T14:15:00Z',
-        },
-        sourceCode: `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { margin: 0; background: #111; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
-    canvas { width: 100%; height: 100%; object-fit: contain; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 600; canvas.height = 450;
-    let offset = 0;
-    function render() {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      offset += 1.5;
-      ctx.font = '900 48px sans-serif';
-      ctx.fillStyle = '#38bdf8';
-      for(let y = 50; y < canvas.height; y += 70) {
-        ctx.fillText('CURIO-BOX ARTIFACT', (Math.sin((offset + y) * 0.02) * 80) + 20, y);
       }
       requestAnimationFrame(render);
     }

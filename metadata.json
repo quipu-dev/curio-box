@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "checkf Capture: M App.tsx, M SandboxViewport.tsx, M asset-cache.ts ... and 2 more files", "type": "capture", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792124788.1173975, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 修复暗房创世底片缺失并重构非破坏性快照链机制", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792125859.6654112, "duration_ms": 0}}

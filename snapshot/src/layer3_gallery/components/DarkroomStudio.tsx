@@ -3,7 +3,7 @@ import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { DarkroomApplier, DarkroomPatchFSM } from '@/layer2_darkroom/fsm/patch-fsm';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
-import type { Artifact } from '@/types';
+import type { Artifact, NegativeLedgerEntry } from '@/types';
 import {
   ArrowLeft,
   Camera,
@@ -21,9 +21,10 @@ import {
   Sparkles,
   Square,
   Tag as TagIcon,
+  Undo2,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface DarkroomStudioProps {
   artifact: Artifact | null;
@@ -50,8 +51,19 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [assetStats, setAssetStats] = useState<AssetCacheStats | null>(null);
+  const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
 
   const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
+
+  // 加载底片链历史清单
+  const refreshHistory = useCallback(async () => {
+    const list = await galleryStorage.listNegativeRevisions(artifact.meta.filename);
+    setHistoryLedger(list);
+  }, [artifact.meta.filename]);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
 
   // 挂载时自动探查工件中的外部 CDN 资源
   useEffect(() => {
@@ -123,6 +135,9 @@ ${artifact.sourceCode}
     }
 
     try {
+      // 预先确保基础原生底片落盘
+      await galleryStorage.ensureGenesisSnapshot(artifact.meta.filename, artifact.sourceCode);
+
       const fsm = new DarkroomPatchFSM();
       const commands = fsm.parse(patchInput);
 
@@ -136,7 +151,13 @@ ${artifact.sourceCode}
       }
 
       const nextRev = artifact.meta.currentRevision + 1;
-      await galleryStorage.saveArtifactSource(artifact.meta.filename, nextCode, nextRev);
+      await galleryStorage.saveArtifactSource(
+        artifact.meta.filename,
+        nextCode,
+        nextRev,
+        'patch',
+        `AI 差量注入应用`,
+      );
 
       const updatedMeta = {
         ...artifact.meta,
@@ -154,43 +175,50 @@ ${artifact.sourceCode}
       onUpdateArtifact(updated);
       setPatchInput('');
       setStatusMessage(`差量补丁已应用！底片链跃迁至 REV:${nextRev}`);
+      await refreshHistory();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatusMessage(`应用失败: ${msg}`);
     }
   };
 
-  // 一阶回滚底片
-  const handleRollback = async () => {
-    if (artifact.meta.currentRevision <= 1) {
-      setStatusMessage('当前已处于初始底片版本，无法继续回滚');
+  // 非破坏性安全还原至指定历史底片
+  const handleRestoreRevision = async (targetRev: number) => {
+    const historicalContent = await galleryStorage.loadNegativeRevision(
+      artifact.meta.filename,
+      targetRev,
+    );
+
+    if (!historicalContent) {
+      setStatusMessage(`未找到 REV:${targetRev} 的物理底片快照`);
       return;
     }
 
-    const prevRev = artifact.meta.currentRevision - 1;
-    const prevContent = await galleryStorage.loadNegativeRevision(artifact.meta.filename, prevRev);
+    const nextRev = artifact.meta.currentRevision + 1;
+    await galleryStorage.saveArtifactSource(
+      artifact.meta.filename,
+      historicalContent,
+      nextRev,
+      'rollback',
+      `非破坏性还原自 REV:${targetRev}`,
+    );
 
-    if (!prevContent) {
-      setStatusMessage(`未找到 REV:${prevRev} 的历史底片快照`);
-      return;
-    }
-
-    await galleryStorage.saveArtifactSource(artifact.meta.filename, prevContent, prevRev);
     const updatedMeta = {
       ...artifact.meta,
-      currentRevision: prevRev,
+      currentRevision: nextRev,
       updatedAt: new Date().toISOString(),
     };
     await galleryStorage.saveMeta(updatedMeta);
 
     const updated: Artifact = {
       ...artifact,
-      sourceCode: prevContent,
+      sourceCode: historicalContent,
       meta: updatedMeta,
     };
 
     onUpdateArtifact(updated);
-    setStatusMessage(`一阶回滚成功：已安全复原至 REV:${prevRev}`);
+    setStatusMessage(`安全还原成功：已将 REV:${targetRev} 映射并跃迁为 REV:${nextRev}`);
+    await refreshHistory();
   };
 
   // 手动一键预缓存外链资产
@@ -215,7 +243,7 @@ ${artifact.sourceCode}
 
   return (
     <div className="fixed inset-0 z-40 bg-background text-main flex flex-col overflow-hidden select-none">
-      {/* 顶部专业控制栏 (Studio Header) */}
+      {/* 顶部控制栏 */}
       <header className="h-13 bg-surface border-b border-border px-4 flex justify-between items-center gap-4 text-xs font-mono shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -242,7 +270,6 @@ ${artifact.sourceCode}
 
         {/* 视口参数与动作控制 */}
         <div className="flex items-center gap-2.5">
-          {/* CDN 离线化状态指示 */}
           {assetStats && assetStats.total > 0 && (
             <div
               className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded border text-[11px] ${
@@ -258,7 +285,6 @@ ${artifact.sourceCode}
             </div>
           )}
 
-          {/* 画幅比切换 */}
           <div className="hidden md:flex items-center border border-border rounded overflow-hidden">
             <button
               type="button"
@@ -293,7 +319,6 @@ ${artifact.sourceCode}
             </button>
           </div>
 
-          {/* 激活/湮灭 */}
           <button
             type="button"
             onClick={() => setIsActivated(!isActivated)}
@@ -307,7 +332,6 @@ ${artifact.sourceCode}
             <span>{isActivated ? '湮灭' : '活体激活'}</span>
           </button>
 
-          {/* 定格快照 */}
           <button
             type="button"
             onClick={handleCapturePoster}
@@ -319,7 +343,6 @@ ${artifact.sourceCode}
             <span className="hidden sm:inline">定格封印</span>
           </button>
 
-          {/* 进入沉浸舞台 */}
           <button
             type="button"
             onClick={() => onOpenStage(artifact)}
@@ -330,7 +353,6 @@ ${artifact.sourceCode}
             <span className="hidden sm:inline">放映舞台</span>
           </button>
 
-          {/* 折叠控制台 */}
           <button
             type="button"
             onClick={() => setIsConsoleOpen(!isConsoleOpen)}
@@ -346,9 +368,8 @@ ${artifact.sourceCode}
         </div>
       </header>
 
-      {/* 主体操作区：左侧超大视口 + 右侧可折叠暗房台 */}
+      {/* 主体视口与控制台 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧大画幅沙箱视口 */}
         <div className="flex-1 bg-black p-3 md:p-6 flex items-center justify-center overflow-hidden">
           <SandboxViewport
             htmlPayload={artifact.sourceCode}
@@ -360,10 +381,8 @@ ${artifact.sourceCode}
           />
         </div>
 
-        {/* 右侧暗房控制台 (Darkroom Console) */}
         {isConsoleOpen && (
           <aside className="w-full md:w-[460px] lg:w-[500px] bg-surface border-l border-border flex flex-col shrink-0 overflow-hidden shadow-2xl">
-            {/* 控制台导航 Tabs */}
             <div className="h-10 bg-background border-b border-border flex text-xs font-mono">
               <button
                 type="button"
@@ -403,7 +422,6 @@ ${artifact.sourceCode}
               </button>
             </div>
 
-            {/* 控制台主体面板 */}
             <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4 text-xs font-mono">
               {activeTab === 'patch' && (
                 <div className="flex-1 flex flex-col gap-3">
@@ -449,18 +467,6 @@ patch_file
                     >
                       应用差量补丁并推入底片链 (REV:{artifact.meta.currentRevision + 1})
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={handleRollback}
-                      className="w-full border border-red-500/40 text-red-400 py-1.5 rounded text-xs hover:bg-red-500/10 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>
-                        一阶安全回滚至上一底片 (REV:{Math.max(1, artifact.meta.currentRevision - 1)}
-                        )
-                      </span>
-                    </button>
                   </div>
                 </div>
               )}
@@ -469,7 +475,7 @@ patch_file
                 <div className="flex flex-col gap-3">
                   <div className="bg-background border border-border p-3 rounded">
                     <div className="text-[10px] uppercase text-muted tracking-wider mb-1">
-                      当前底片锚点
+                      当前活跃底片锚点
                     </div>
                     <div className="text-sm font-bold text-main">
                       REV:{artifact.meta.currentRevision}
@@ -480,23 +486,68 @@ patch_file
                   </div>
 
                   <div className="text-muted text-[11px] leading-relaxed">
-                    暗房底片链（Negative Chain）会在每次应用差量补丁时将完整快照持久化保存在目录下的{' '}
-                    <code className="text-sky-400 font-mono">
-                      .gallery/negatives/{artifact.meta.filename.replace('.html', '')}/
-                    </code>{' '}
-                    中，支持无限级无损回滚。
+                    所有底片快照均以无损物理文件永久归档。点击任意历史快照即可执行
+                    <span className="text-amber-400">非破坏性前向还原</span>
+                    （不会抹除已有历史）。
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleRollback}
-                    className="w-full border border-red-500/40 text-red-400 py-2 rounded text-xs hover:bg-red-500/10 transition-colors flex items-center justify-center gap-1 mt-2"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>
-                      回滚至 REV:{Math.max(1, artifact.meta.currentRevision - 1)} 快照底片
-                    </span>
-                  </button>
+                  <div className="flex flex-col gap-2 mt-2">
+                    <div className="text-[10px] uppercase text-muted tracking-wider">
+                      底片快照胶卷（{historyLedger.length} 个锚点）
+                    </div>
+
+                    <div className="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
+                      {historyLedger.map((item) => {
+                        const isCurrent = item.revision === artifact.meta.currentRevision;
+                        return (
+                          <div
+                            key={item.revision}
+                            className={`p-2.5 rounded border text-xs flex items-center justify-between transition-colors ${
+                              isCurrent
+                                ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                                : 'bg-background border-border text-zinc-300'
+                            }`}
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold font-mono">REV:{item.revision}</span>
+                                {item.action === 'genesis' && (
+                                  <span className="text-[10px] bg-sky-500/20 text-sky-400 px-1.5 py-0.2 rounded border border-sky-500/30">
+                                    创世底片
+                                  </span>
+                                )}
+                                {item.action === 'rollback' && (
+                                  <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.2 rounded border border-purple-500/30">
+                                    还原锚点
+                                  </span>
+                                )}
+                                {isCurrent && (
+                                  <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded">
+                                    当前视口
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-muted truncate max-w-[240px]">
+                                {item.description || new Date(item.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+
+                            {!isCurrent && (
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreRevision(item.revision)}
+                                className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-border text-[11px] text-main shrink-0"
+                                title={`将 REV:${item.revision} 作为新版本还原`}
+                              >
+                                <Undo2 className="w-3 h-3 text-amber-400" />
+                                <span>安全还原</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -525,7 +576,6 @@ patch_file
                     </div>
                   </div>
 
-                  {/* 外部静态资源 CDN 缓存池详情 */}
                   <div className="bg-background border border-border p-3 rounded flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase text-muted tracking-wider">
@@ -579,7 +629,6 @@ patch_file
                 </div>
               )}
 
-              {/* 底部状态提示条 */}
               {statusMessage && (
                 <div className="p-2.5 bg-background border border-border rounded text-[11px] text-muted flex items-start gap-1.5 animate-in fade-in">
                   <History className="w-3.5 h-3.5 text-muted mt-0.5 shrink-0" />

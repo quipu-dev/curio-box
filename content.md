@@ -1,487 +1,33 @@
-我将为您生成修复方案并构建一套更符合暗房哲学的非破坏性快照（Negative Ledger & Genesis Snapshot）机制。
+我将生成并执行实施计划，为暗房工作台注入基于内存派生的无污染历史检视（Checkout）机制。
 
-## [WIP] fix: 修复暗房创世底片缺失并重构非破坏性快照链机制
-
-### 错误分析
-在原有暗房存储机制中存在以下核心设计缺陷：
-1. **创世底片断层 (Genesis Gap)**：在工件首次纳管扫描时（`scanArtifacts`），系统仅将元数据默认赋为 `currentRevision: 1`，但未在物理磁盘 `.gallery/negatives/<name>/` 下创建 `rev-0001.snapshot`。
-2. **时序与语义倒错**：首次应用差量补丁时，系统直接保存 `rev-0002.snapshot`（存储修改后的代码），导致当用户尝试执行一阶回滚读取 REV 1 时，磁盘无该文件，导致回滚直接崩溃且工件初始状态不可挽回地丢失。
-3. **破坏性覆盖**：回滚直接缩减 `currentRevision` 指针，再次应用补丁会直接覆盖同版本快照文件，破坏了历史线性。
+## [WIP] feat: 为暗房工作台引入零污染历史底片检视 (Checkout) 机制
 
 ### 用户需求
-1. 修复磁盘缺失 `rev-0001.snapshot` 的问题，确保无论何时工件均有不可篡改的初始底片备份。
-2. 建立更符合直觉的暗房胶卷快照机制，提供完整透明的历史底片清单展示与安全无损的还原能力。
+在暗房中引入一套类似 Git `detached HEAD` 的历史快照检视机制，允许沙箱安全载入并执行任意历史底片进行视听验证，且此过程绝不改写磁盘物理文件、不产生多余的 Revision。
 
 ### 评论
-将“一维破坏性倒退”重构为“非破坏性前向跃迁（Non-destructive Forward Rollback）”并补齐“创世底片自动封印”，不仅彻底杜绝代码丢失风险，还大幅提升了工件实验的探索自由度。
+该功能打通了工件实验的“时光漫游”闭环。通过将视口渲染层与磁盘物理层解耦为纯内存派生状态，既保障了底片回溯的零负担探索，又通过状态护栏规避了历史覆盖风险。
 
 ### 目标
-1. 在类型系统与存储层中引入底片台账机制（`NegativeLedgerEntry`），支持记录版本号、生成动作与时间戳。
-2. 在 `fs-storage.ts` 中实现创世快照固化逻辑（`ensureGenesisSnapshot`）与全量底片版本枚举（`listNegativeRevisions`）。
-3. 改造 `DarkroomStudio.tsx`，将单薄的“一阶回滚”升级为多版本可视化胶卷流水线，支持安全还原任意历史底片。
+1. 在 `DarkroomStudio` 状态中引入游离态指针 `viewingSnapshot`，沙箱视口自适应切换渲染当前或历史代码。
+2. 在沙箱视口上方增加精致的“历史试映中”HUD 浮动悬浮胶囊，提供【返回最新 (HEAD)】与【基于此版分叉/继续】快捷操作。
+3. 在底片链历史列表中添加一键检视（Checkout / 试映）交互，并在当前检视条目上呈现高亮指示。
+4. 在 AI 差量补丁面板中增加游离态保护提示，引导用户在试映模式下安全创作。
 
 ### 基本原理
-- **创世自动落盘**：工件被载入或首次操作时，若检测到底片目录下不存在 `rev-0001.snapshot`，立即将当前原生源码持久化为 0001 号底片，并写入底片台账。
-- **Git-Revert 风格的无损还原**：恢复历史底片时，不破坏性修改版本号指针，而是将目标历史底片作为新的一轮修订（例如从 REV 3 还原 REV 1，则生成 `REV 4 [还原自 REV 1]` 并落盘），保证历史链条单调递增，杜绝覆写。
+- **零磁盘 I/O 污染**：检视行为仅通过 `loadNegativeRevision` 读取历史代码并常驻内存 State，不触发任何 `saveArtifactSource`。
+- **纯派生渲染**：视口渲染采用派生值 `viewingSnapshot ? viewingSnapshot.content : artifact.sourceCode`，保证单向数据流清晰透明。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/engine #concept/history #scope/core #scope/ux #ai/instruct #task/domain/storage #task/object/negative-chain #task/action/refactor #task/state/begin
+#intent/build #flow/ready #priority/high #comp/cli #concept/history #concept/ui #scope/ux #ai/instruct #task/domain/ui #task/object/negative-chain #task/action/checkout-mode #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 扩展类型定义以支持底片台账与快照元数据
+#### Acts 1: 在 DarkroomStudio 中集成 Checkout 试映状态与全景 HUD 交互
 
-在 `types/index.ts` 中补充底片快照条目与来源动作类型。
-
-~~~~~act
-patch_file
-src/types/index.ts
-~~~~~
-~~~~~typescript.old
-export interface NegativeRevision {
-  revision: number;
-  timestamp: string;
-  type: 'snapshot' | 'patch';
-  content: string;
-}
-~~~~~
-~~~~~typescript.new
-export interface NegativeLedgerEntry {
-  revision: number;
-  timestamp: string;
-  action: 'genesis' | 'patch' | 'rollback';
-  description?: string;
-}
-
-export interface NegativeRevision {
-  revision: number;
-  timestamp: string;
-  type: 'snapshot' | 'patch';
-  content: string;
-}
-~~~~~
-
-#### Acts 2: 存储层增加创世底片固化、台账日志与历史快照版本索引
-
-重写 `src/layer2_darkroom/storage/fs-storage.ts`，加入创世快照检查（`ensureGenesisSnapshot`）、底片台账持久化以及完整的快照版本查询。
-
-~~~~~act
-write_file
-src/layer2_darkroom/storage/fs-storage.ts
-~~~~~
-~~~~~typescript
-import type { Artifact, ArtifactMeta, NegativeLedgerEntry } from '@/types';
-
-const GALLERY_DIR = '.gallery';
-const POSTERS_DIR = 'posters';
-const NEGATIVES_DIR = 'negatives';
-const META_FILE = 'meta.json';
-const LEDGER_FILE = 'ledger.json';
-const IDB_NAME = 'curio_box_meta_db';
-const IDB_STORE = 'fs_handles';
-const IDB_ACTIVE_KEY = 'active_directory_handle';
-
-function openHandleDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(IDB_NAME, 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(IDB_STORE)) {
-        request.result.createObjectStore(IDB_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function persistHandleToIDB(handle: FileSystemDirectoryHandle): Promise<void> {
-  try {
-    const db = await openHandleDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(handle, IDB_ACTIVE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.warn('持久化目录句柄至 IndexedDB 失败:', err);
-  }
-}
-
-async function loadHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
-  try {
-    const db = await openHandleDB();
-    return await new Promise<FileSystemDirectoryHandle | null>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(IDB_ACTIVE_KEY);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return null;
-  }
-}
-
-export class GalleryStorage {
-  private dirHandle: FileSystemDirectoryHandle | null = null;
-
-  public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
-    this.dirHandle = handle;
-    persistHandleToIDB(handle).catch(() => {});
-  }
-
-  public getDirectoryHandle(): FileSystemDirectoryHandle | null {
-    return this.dirHandle;
-  }
-
-  public async restoreSavedHandle(): Promise<{
-    handle: FileSystemDirectoryHandle | null;
-    permission: PermissionState;
-  }> {
-    const saved = await loadHandleFromIDB();
-    if (!saved) {
-      return { handle: null, permission: 'prompt' };
-    }
-
-    try {
-      const perm = await (
-        saved as unknown as {
-          queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
-        }
-      ).queryPermission({ mode: 'readwrite' });
-
-      if (perm === 'granted') {
-        this.dirHandle = saved;
-      }
-      return { handle: saved, permission: perm };
-    } catch {
-      return { handle: saved, permission: 'prompt' };
-    }
-  }
-
-  public hasHandle(): boolean {
-    return this.dirHandle !== null;
-  }
-
-  /**
-   * 确保工件存在 REV 1 创世底片，补齐断层
-   */
-  public async ensureGenesisSnapshot(filename: string, initialContent: string): Promise<void> {
-    if (!this.dirHandle) return;
-
-    try {
-      const existingRev1 = await this.loadNegativeRevision(filename, 1);
-      if (!existingRev1) {
-        await this.recordNegativeRevision(
-          filename,
-          1,
-          initialContent,
-          'genesis',
-          '初始导入原生底片',
-        );
-      }
-    } catch (err) {
-      console.warn('创世底片检验或写入异常:', err);
-    }
-  }
-
-  public async scanArtifacts(): Promise<Artifact[]> {
-    if (!this.dirHandle) {
-      return this.getMockArtifacts();
-    }
-
-    const artifacts: Artifact[] = [];
-    const metaMap = await this.readAllMeta();
-
-    const entries = (
-      this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
-    ).values();
-
-    for await (const entry of entries) {
-      if (entry.kind === 'file' && entry.name.endsWith('.html')) {
-        const file = await (entry as FileSystemFileHandle).getFile();
-        const text = await file.text();
-
-        // 自动固化创世底片
-        await this.ensureGenesisSnapshot(entry.name, text);
-
-        const meta = metaMap[entry.name] || {
-          id: `art_${Math.random().toString(16).slice(2, 10)}`,
-          name: entry.name.replace(/\.html$/, ''),
-          filename: entry.name,
-          tags: ['形态:原生html', '状态:未分类'],
-          currentRevision: 1,
-          updatedAt: new Date().toISOString(),
-        };
-
-        const posterBlobUrl = await this.loadPosterBlobUrl(entry.name);
-
-        artifacts.push({
-          meta,
-          sourceCode: text,
-          posterBlobUrl,
-        });
-      }
-    }
-
-    return artifacts;
-  }
-
-  public async saveArtifactSource(
-    filename: string,
-    newContent: string,
-    revision: number,
-    action: 'genesis' | 'patch' | 'rollback' = 'patch',
-    description?: string,
-  ): Promise<void> {
-    if (!this.dirHandle) return;
-
-    const fileHandle = await this.dirHandle.getFileHandle(filename, {
-      create: true,
-    });
-    const writable = await fileHandle.createWritable();
-    await writable.write(newContent);
-    await writable.close();
-
-    await this.recordNegativeRevision(filename, revision, newContent, action, description);
-  }
-
-  public async savePoster(filename: string, blob: Blob): Promise<string> {
-    if (!this.dirHandle) {
-      return URL.createObjectURL(blob);
-    }
-
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
-    const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-    const posterHandle = await postersDir.getFileHandle(posterFilename, {
-      create: true,
-    });
-
-    const writable = await posterHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-
-    return URL.createObjectURL(blob);
-  }
-
-  public async saveMeta(meta: ArtifactMeta): Promise<void> {
-    if (!this.dirHandle) return;
-    const allMeta = await this.readAllMeta();
-    allMeta[meta.filename] = meta;
-
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = await galleryDir.getFileHandle(META_FILE, {
-      create: true,
-    });
-    const writable = await metaHandle.createWritable();
-    await writable.write(JSON.stringify(allMeta, null, 2));
-    await writable.close();
-  }
-
-  public async recordNegativeRevision(
-    filename: string,
-    revision: number,
-    content: string,
-    action: 'genesis' | 'patch' | 'rollback' = 'patch',
-    description?: string,
-  ): Promise<void> {
-    if (!this.dirHandle) return;
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR, { create: true });
-    const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''), {
-      create: true,
-    });
-
-    // 写入底片快照文件
-    const revHandle = await baseDir.getFileHandle(
-      `rev-${String(revision).padStart(4, '0')}.snapshot`,
-      { create: true },
-    );
-    const writable = await revHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-
-    // 更新底片台账 (Ledger)
-    try {
-      let ledger: NegativeLedgerEntry[] = [];
-      try {
-        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
-        const file = await ledgerFile.getFile();
-        ledger = JSON.parse(await file.text());
-      } catch {
-        ledger = [];
-      }
-
-      ledger = ledger.filter((item) => item.revision !== revision);
-      ledger.push({
-        revision,
-        timestamp: new Date().toISOString(),
-        action,
-        description: description || (action === 'genesis' ? '创世底片' : `底片快照 REV:${revision}`),
-      });
-      ledger.sort((a, b) => a.revision - b.revision);
-
-      const ledgerHandle = await baseDir.getFileHandle(LEDGER_FILE, { create: true });
-      const ledgerWritable = await ledgerHandle.createWritable();
-      await ledgerWritable.write(JSON.stringify(ledger, null, 2));
-      await ledgerWritable.close();
-    } catch (err) {
-      console.warn('更新底片台账失败:', err);
-    }
-  }
-
-  public async loadNegativeRevision(filename: string, revision: number): Promise<string | null> {
-    if (!this.dirHandle) return null;
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
-      const revHandle = await baseDir.getFileHandle(
-        `rev-${String(revision).padStart(4, '0')}.snapshot`,
-      );
-      const file = await revHandle.getFile();
-      return await file.text();
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 获取指定工件底片链上的所有历史修订列表
-   */
-  public async listNegativeRevisions(filename: string): Promise<NegativeLedgerEntry[]> {
-    if (!this.dirHandle) {
-      return [
-        {
-          revision: 1,
-          timestamp: new Date().toISOString(),
-          action: 'genesis',
-          description: '内置演示底片',
-        },
-      ];
-    }
-
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
-
-      try {
-        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
-        const file = await ledgerFile.getFile();
-        const ledger: NegativeLedgerEntry[] = JSON.parse(await file.text());
-        return ledger.sort((a, b) => b.revision - a.revision);
-      } catch {
-        // 台账不存在时扫描快照文件兜底
-        const results: NegativeLedgerEntry[] = [];
-        const entries = (
-          baseDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
-        ).values();
-        for await (const entry of entries) {
-          const match = entry.name.match(/^rev-(\d+)\.snapshot$/);
-          if (match) {
-            const rev = Number.parseInt(match[1], 10);
-            results.push({
-              revision: rev,
-              timestamp: new Date().toISOString(),
-              action: rev === 1 ? 'genesis' : 'patch',
-              description: rev === 1 ? '创世原生底片' : `快照 REV:${rev}`,
-            });
-          }
-        }
-        return results.sort((a, b) => b.revision - a.revision);
-      }
-    } catch {
-      return [];
-    }
-  }
-
-  private async readAllMeta(): Promise<Record<string, ArtifactMeta>> {
-    if (!this.dirHandle) return {};
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-      const metaHandle = await galleryDir.getFileHandle(META_FILE);
-      const file = await metaHandle.getFile();
-      const text = await file.text();
-      return JSON.parse(text);
-    } catch {
-      return {};
-    }
-  }
-
-  private async loadPosterBlobUrl(filename: string): Promise<string | undefined> {
-    if (!this.dirHandle) return undefined;
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
-      const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-      const posterHandle = await postersDir.getFileHandle(posterFilename);
-      const file = await posterHandle.getFile();
-      return URL.createObjectURL(file);
-    } catch {
-      return undefined;
-    }
-  }
-
-  public getMockArtifacts(): Artifact[] {
-    return [
-      {
-        meta: {
-          id: 'art_fluid2d',
-          name: '纳维-斯托克斯二维流体仿真',
-          filename: 'fluid-simulation.html',
-          tags: ['领域:图形学', '形态:webgl', '物理:流体', '模型:claude-3.5-sonnet'],
-          currentRevision: 1,
-          updatedAt: '2025-02-28T12:00:00Z',
-        },
-        sourceCode: `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { margin: 0; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
-    canvas { width: 100%; height: 100%; object-fit: contain; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 600; canvas.height = 450;
-    let t = 0;
-    function render() {
-      ctx.fillStyle = 'rgba(10, 15, 30, 0.2)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      t += 0.03;
-      for (let i = 0; i < 40; i++) {
-        const x = canvas.width / 2 + Math.sin(t + i * 0.2) * (120 + Math.sin(t * 0.5) * 50);
-        const y = canvas.height / 2 + Math.cos(t * 0.8 + i * 0.3) * (90 + Math.cos(t * 0.3) * 40);
-        ctx.beginPath();
-        ctx.arc(x, y, 12 + Math.sin(i + t) * 6, 0, Math.PI * 2);
-        ctx.fillStyle = 'hsl(' + ((t * 30 + i * 10) % 360) + ', 85%, 60%)';
-        ctx.fill();
-      }
-      requestAnimationFrame(render);
-    }
-    render();
-  </script>
-</body>
-</html>`,
-      },
-    ];
-  }
-}
-
-export const galleryStorage = new GalleryStorage();
-~~~~~
-
-#### Acts 3: 改造 DarkroomStudio 的底片链历史与非破坏性安全回滚
-
-重构 `src/layer3_gallery/components/DarkroomStudio.tsx`，在打补丁前校验创世底片，在底片链历史中展示直观的胶卷流水线，并支持将任意历史版本作为全新快照安全复原。
+对 `src/layer3_gallery/components/DarkroomStudio.tsx` 进行全量升级，集成检视状态指针、试映悬浮条与安全护栏。
 
 ~~~~~act
 write_file
@@ -502,6 +48,9 @@ import {
   Code2,
   Copy,
   Database,
+  Eye,
+  EyeOff,
+  GitBranch,
   History,
   Maximize2,
   PanelRightClose,
@@ -514,7 +63,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import type React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface DarkroomStudioProps {
   artifact: Artifact | null;
@@ -524,6 +73,11 @@ interface DarkroomStudioProps {
 }
 
 type TabType = 'patch' | 'history' | 'assets';
+
+interface ViewingSnapshotState {
+  revision: number;
+  content: string;
+}
 
 export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   artifact,
@@ -543,7 +97,15 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [assetStats, setAssetStats] = useState<AssetCacheStats | null>(null);
   const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
 
+  // 游离检视快照（Checkout 模式：只读沙箱试映，不污染物理磁盘）
+  const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshotState | null>(null);
+
   const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
+
+  // 派生当前视口渲染的代码 payload
+  const activeSourceCode = useMemo(() => {
+    return viewingSnapshot ? viewingSnapshot.content : artifact.sourceCode;
+  }, [viewingSnapshot, artifact.sourceCode]);
 
   // 加载底片链历史清单
   const refreshHistory = useCallback(async () => {
@@ -555,9 +117,9 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     refreshHistory();
   }, [refreshHistory]);
 
-  // 挂载时自动探查工件中的外部 CDN 资源
+  // 挂载或视口代码变更时自动探查外部 CDN 资源
   useEffect(() => {
-    const assets = AssetCacheEngine.detectExternalAssets(artifact.sourceCode);
+    const assets = AssetCacheEngine.detectExternalAssets(activeSourceCode);
     Promise.all(assets.map((a) => AssetCacheEngine.isCached(a.url))).then((results) => {
       const cachedCount = results.filter(Boolean).length;
       setAssetStats({
@@ -569,7 +131,31 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
         })),
       });
     });
-  }, [artifact.sourceCode]);
+  }, [activeSourceCode]);
+
+  // 检视特定历史底片 (Checkout)
+  const handleCheckoutRevision = async (targetRev: number) => {
+    if (targetRev === artifact.meta.currentRevision) {
+      setViewingSnapshot(null);
+      setStatusMessage(`已退出历史试映，回到当前最新底片 (REV:${targetRev})`);
+      return;
+    }
+
+    const content = await galleryStorage.loadNegativeRevision(artifact.meta.filename, targetRev);
+    if (!content) {
+      setStatusMessage(`未能载入 REV:${targetRev} 的底片快照`);
+      return;
+    }
+
+    setViewingSnapshot({ revision: targetRev, content });
+    setStatusMessage(`已安全检视 REV:${targetRev} 快照（内存试映中，未改动磁盘文件）`);
+  };
+
+  // 退出检视态，切回物理主版本
+  const handleExitCheckout = () => {
+    setViewingSnapshot(null);
+    setStatusMessage(`已退出检视态，恢复至最新主干底片 (REV:${artifact.meta.currentRevision})`);
+  };
 
   // 截屏定格快照
   const handleCapturePoster = async () => {
@@ -621,6 +207,11 @@ ${artifact.sourceCode}
   const handleApplyPatch = async () => {
     if (!patchInput.trim()) {
       setStatusMessage('请粘贴包含 act、old_doc、new_doc 的补丁文本');
+      return;
+    }
+
+    if (viewingSnapshot) {
+      setStatusMessage('当前处于历史检视模式，请先【基于此版分叉】或【退出试映】后再应用补丁');
       return;
     }
 
@@ -707,6 +298,7 @@ ${artifact.sourceCode}
     };
 
     onUpdateArtifact(updated);
+    setViewingSnapshot(null);
     setStatusMessage(`安全还原成功：已将 REV:${targetRev} 映射并跃迁为 REV:${nextRev}`);
     await refreshHistory();
   };
@@ -718,7 +310,7 @@ ${artifact.sourceCode}
     for (const asset of assetStats.assets) {
       await AssetCacheEngine.cacheAsset(asset.url);
     }
-    const freshAssets = AssetCacheEngine.detectExternalAssets(artifact.sourceCode);
+    const freshAssets = AssetCacheEngine.detectExternalAssets(activeSourceCode);
     const results = await Promise.all(freshAssets.map((a) => AssetCacheEngine.isCached(a.url)));
     setAssetStats({
       total: freshAssets.length,
@@ -752,9 +344,17 @@ ${artifact.sourceCode}
             <span className="font-bold text-sm font-sans truncate max-w-xs md:max-w-md">
               {artifact.meta.name}
             </span>
-            <span className="bg-tag px-2 py-0.5 rounded text-[11px] font-semibold text-main border border-border">
-              REV:{artifact.meta.currentRevision}
-            </span>
+
+            {viewingSnapshot ? (
+              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 animate-pulse">
+                <Eye className="w-3 h-3" />
+                <span>检视态: REV:{viewingSnapshot.revision}</span>
+              </span>
+            ) : (
+              <span className="bg-tag px-2 py-0.5 rounded text-[11px] font-semibold text-main border border-border">
+                REV:{artifact.meta.currentRevision}
+              </span>
+            )}
           </div>
         </div>
 
@@ -860,9 +460,42 @@ ${artifact.sourceCode}
 
       {/* 主体视口与控制台 */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 bg-black p-3 md:p-6 flex items-center justify-center overflow-hidden">
+        <div className="relative flex-1 bg-black p-3 md:p-6 flex items-center justify-center overflow-hidden">
+          {/* 检视漫游态悬浮 HUD 胶囊 */}
+          {viewingSnapshot && (
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-zinc-950/90 border border-amber-500/50 backdrop-blur-md px-4 py-2 rounded-full text-xs font-mono text-zinc-200 shadow-2xl animate-in fade-in slide-in-from-top-2">
+              <span className="inline-flex items-center gap-1.5 text-amber-400 font-semibold">
+                <Eye className="w-3.5 h-3.5 animate-pulse" />
+                <span>检视漫游中 · REV:{viewingSnapshot.revision}</span>
+              </span>
+              <span className="text-zinc-500 text-[11px]">(沙箱只读试映)</span>
+
+              <div className="w-px h-3.5 bg-zinc-700" />
+
+              <button
+                type="button"
+                onClick={() => handleRestoreRevision(viewingSnapshot.revision)}
+                className="flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-full transition-colors text-[11px]"
+                title="以此历史底片为起点分叉生成新的一轮修订"
+              >
+                <GitBranch className="w-3 h-3" />
+                <span>基于此版分叉继续</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExitCheckout}
+                className="flex items-center gap-1 text-zinc-400 hover:text-white transition-colors text-[11px] px-1.5"
+                title="退出试映并回到物理主版本"
+              >
+                <EyeOff className="w-3 h-3" />
+                <span>返回最新</span>
+              </button>
+            </div>
+          )}
+
           <SandboxViewport
-            htmlPayload={artifact.sourceCode}
+            htmlPayload={activeSourceCode}
             isActivated={isActivated}
             aspectRatio={aspectRatio}
             onCaptureReady={(cb) => {
@@ -915,28 +548,57 @@ ${artifact.sourceCode}
             <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4 text-xs font-mono">
               {activeTab === 'patch' && (
                 <div className="flex-1 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase text-muted tracking-wider">
-                      提示词协同与 Patch FSM
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyPromptContext}
-                      className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
-                    >
-                      {copied ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                      <span>{copied ? '已复制源码上下文！' : '复制大模型提示词上下文'}</span>
-                    </button>
-                  </div>
+                  {viewingSnapshot ? (
+                    <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded flex flex-col gap-2.5 text-amber-300">
+                      <div className="flex items-center gap-2 font-semibold text-xs">
+                        <Eye className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>当前处于 REV:{viewingSnapshot.revision} 历史检视态</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-300 leading-relaxed">
+                        为防止代码基准冲突，历史检视态下 AI 差量补丁已自动锁定。您可以基于当前快照生成新分支，或返回最新物理版本。
+                      </p>
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreRevision(viewingSnapshot.revision)}
+                          className="flex-1 bg-amber-500/20 border border-amber-500/40 text-amber-200 py-2 rounded text-xs hover:bg-amber-500/30 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <GitBranch className="w-3.5 h-3.5" />
+                          <span>基于此版分叉继续创作</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExitCheckout}
+                          className="px-3 border border-border text-muted hover:text-main py-2 rounded text-xs transition-colors"
+                        >
+                          返回最新
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase text-muted tracking-wider">
+                          提示词协同与 Patch FSM
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyPromptContext}
+                          className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
+                        >
+                          {copied ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                          <span>{copied ? '已复制源码上下文！' : '复制大模型提示词上下文'}</span>
+                        </button>
+                      </div>
 
-                  <textarea
-                    value={patchInput}
-                    onChange={(e) => setPatchInput(e.target.value)}
-                    placeholder={`粘贴大模型生成的差量代码块：
+                      <textarea
+                        value={patchInput}
+                        onChange={(e) => setPatchInput(e.target.value)}
+                        placeholder={`粘贴大模型生成的差量代码块：
 \`\`\`act
 patch_file
 \`\`\`
@@ -946,18 +608,20 @@ patch_file
 \`\`\`new_doc
 <替换后的新代码行>
 \`\`\``}
-                    className="flex-1 min-h-[300px] w-full bg-code text-zinc-300 border border-border p-3.5 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
-                  />
+                        className="flex-1 min-h-[300px] w-full bg-code text-zinc-300 border border-border p-3.5 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
+                      />
 
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={handleApplyPatch}
-                      className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 transition-opacity"
-                    >
-                      应用差量补丁并推入底片链 (REV:{artifact.meta.currentRevision + 1})
-                    </button>
-                  </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={handleApplyPatch}
+                          className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 transition-opacity"
+                        >
+                          应用差量补丁并推入底片链 (REV:{artifact.meta.currentRevision + 1})
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -965,7 +629,7 @@ patch_file
                 <div className="flex flex-col gap-3">
                   <div className="bg-background border border-border p-3 rounded">
                     <div className="text-[10px] uppercase text-muted tracking-wider mb-1">
-                      当前活跃底片锚点
+                      物理主干底片锚点 (HEAD)
                     </div>
                     <div className="text-sm font-bold text-main">
                       REV:{artifact.meta.currentRevision}
@@ -976,9 +640,10 @@ patch_file
                   </div>
 
                   <div className="text-muted text-[11px] leading-relaxed">
-                    所有底片快照均以无损物理文件永久归档。点击任意历史快照即可执行
-                    <span className="text-amber-400">非破坏性前向还原</span>
-                    （不会抹除已有历史）。
+                    点击 <span className="text-sky-400 font-semibold">检视 (Checkout)</span>{' '}
+                    可在沙箱中只读运行任意历史底片（零磁盘开销）；点击{' '}
+                    <span className="text-amber-400 font-semibold">安全还原</span>{' '}
+                    可将历史底片作为新的一轮修订前向推入。
                   </div>
 
                   <div className="flex flex-col gap-2 mt-2">
@@ -988,12 +653,16 @@ patch_file
 
                     <div className="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
                       {historyLedger.map((item) => {
-                        const isCurrent = item.revision === artifact.meta.currentRevision;
+                        const isPhysicalHead = item.revision === artifact.meta.currentRevision;
+                        const isCurrentlyViewing =
+                          viewingSnapshot?.revision === item.revision ||
+                          (!viewingSnapshot && isPhysicalHead);
+
                         return (
                           <div
                             key={item.revision}
                             className={`p-2.5 rounded border text-xs flex items-center justify-between transition-colors ${
-                              isCurrent
+                              isCurrentlyViewing
                                 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
                                 : 'bg-background border-border text-zinc-300'
                             }`}
@@ -1011,28 +680,51 @@ patch_file
                                     还原锚点
                                   </span>
                                 )}
-                                {isCurrent && (
+                                {isPhysicalHead && (
+                                  <span className="text-[10px] bg-zinc-800 text-zinc-300 border border-zinc-700 px-1.5 py-0.2 rounded">
+                                    HEAD
+                                  </span>
+                                )}
+                                {isCurrentlyViewing && (
                                   <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded">
                                     当前视口
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-muted truncate max-w-[240px]">
+                              <span className="text-[11px] text-muted truncate max-w-[210px]">
                                 {item.description || new Date(item.timestamp).toLocaleTimeString()}
                               </span>
                             </div>
 
-                            {!isCurrent && (
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => handleRestoreRevision(item.revision)}
-                                className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-border text-[11px] text-main shrink-0"
-                                title={`将 REV:${item.revision} 作为新版本还原`}
+                                onClick={() => handleCheckoutRevision(item.revision)}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors border ${
+                                  viewingSnapshot?.revision === item.revision
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : 'border-border text-muted hover:text-main hover:bg-border'
+                                }`}
+                                title="在沙箱中只读检视该版本运行效果 (零磁盘改动)"
                               >
-                                <Undo2 className="w-3 h-3 text-amber-400" />
-                                <span>安全还原</span>
+                                <Eye className="w-3 h-3 text-sky-400" />
+                                <span>
+                                  {viewingSnapshot?.revision === item.revision ? '试映中' : '检视'}
+                                </span>
                               </button>
-                            )}
+
+                              {!isPhysicalHead && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreRevision(item.revision)}
+                                  className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-border text-[11px] text-main"
+                                  title={`基于 REV:${item.revision} 跃迁生成新 Revision`}
+                                >
+                                  <Undo2 className="w-3 h-3 text-amber-400" />
+                                  <span>还原</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -1135,5 +827,5 @@ patch_file
 ~~~~~
 
 ### 下一步建议
-1. **测试校验**：运行 `pnpm check` 验证 TypeScript 编译与 Biome 代码规范。
-2. **实机验证**：在暗房中对工件注入一次差量补丁，检查磁盘上 `.gallery/negatives/<artifact>/` 是否已同时拥有 `rev-0001.snapshot` 和 `rev-0002.snapshot`，并尝试点击“安全还原”验证非破坏性前向版本跃迁效果。
+1. **代码检查**：执行 `pnpm check` 确保 TypeScript 编译及 Biome Linter 0 警告通过。
+2. **体验试映**：进入任意工件的暗房工作台，在“底片链历史”中点击“检视”按钮，体验沙箱视口零延迟切换历史快照、顶部漫游胶囊与“基于此版分叉继续”流程。

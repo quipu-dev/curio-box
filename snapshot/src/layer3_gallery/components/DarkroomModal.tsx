@@ -170,9 +170,7 @@ ctx.fillStyle = '#001a33';
         if (e.key === 'Escape') onClose();
       }}
     >
-      <div
-        className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden"
-      >
+      <div className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden">
         <div className="flex flex-col bg-background border-r border-border h-full overflow-hidden">
           <div className="p-3 bg-surface border-b border-border flex justify-between items-center text-xs font-mono">
             <span className="text-muted">【Layer 1】沙箱隔离硬视口 (IFrame Sandbox)</span>

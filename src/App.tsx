@@ -1,10 +1,13 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
+import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
+import { ArtifactComposerModal } from '@/layer3_gallery/components/ArtifactComposerModal';
 import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { Header } from '@/layer3_gallery/components/Header';
 import type { Artifact } from '@/types';
+import { UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface WindowWithFSA extends Window {
@@ -21,6 +24,11 @@ export function App() {
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // 装配台弹窗控制
+  const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
+  // 全局拖拽悬浮状态
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
@@ -100,6 +108,110 @@ export function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  // 现有所有工件的文件名列表（用于查重）
+  const existingFilenames = useMemo(() => {
+    return artifacts.map((a) => a.meta.filename);
+  }, [artifacts]);
+
+  // 从剪贴板导入
+  const handleImportFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        alert('剪贴板为空，请先复制 HTML 或脚本代码！');
+        return;
+      }
+      const wrapped = TitleSanitizerEngine.wrapAsCompleteHtml(text);
+      setComposerInitialCode(wrapped);
+    } catch {
+      // 浏览器权限受阻时，给一份默认空白模板并引导粘贴
+      alert('无法直接读取剪贴板，已为您打开装配台，请在代码区按 Ctrl+V 粘贴。');
+      setComposerInitialCode(TitleSanitizerEngine.wrapAsCompleteHtml('', '新工件标本'));
+    }
+  };
+
+  // 打开空白装配台
+  const handleOpenNewArtifact = () => {
+    const defaultTemplate = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>新工件标本</title>
+  <style>
+    body { margin: 0; background: #0a0a0f; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div>[ 活体工件准备就绪 ]</div>
+  <script>
+    console.log("Curio Sandbox Activated");
+  </script>
+</body>
+</html>`;
+    setComposerInitialCode(defaultTemplate);
+  };
+
+  // 监听文件拖拽进入
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      // 离开视口边缘时消除高亮
+      if (!e.relatedTarget) {
+        setIsDragOver(false);
+      }
+    };
+
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+
+      if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+
+      const file = e.dataTransfer.files[0];
+      if (!file.name.endsWith('.html') && !file.type.includes('html')) {
+        alert('请拖入 .html 格式的工件文件');
+        return;
+      }
+
+      const text = await file.text();
+      setComposerInitialCode(text);
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
+  // 保存新建工件并落盘
+  const handleSaveComposerArtifact = async (data: {
+    filename: string;
+    content: string;
+    name: string;
+    tags: string[];
+  }) => {
+    const newArt = await galleryStorage.createArtifact(
+      data.filename,
+      data.content,
+      data.name,
+      data.tags,
+    );
+
+    setArtifacts((prev) => [
+      newArt,
+      ...prev.filter((a) => a.meta.filename !== newArt.meta.filename),
+    ]);
+  };
+
   const handleUpdateArtifact = (updated: Artifact) => {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
@@ -122,6 +234,8 @@ export function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onPickDirectory={handlePickDirectory}
+        onImportFromClipboard={handleImportFromClipboard}
+        onOpenNewArtifactComposer={handleOpenNewArtifact}
         hasDirectory={hasDirectory}
         pendingDirectoryName={pendingHandle?.name}
         onRequestPendingPermission={handleRequestPendingPermission}
@@ -182,6 +296,27 @@ export function App() {
           }}
           onUpdateArtifact={handleUpdateArtifact}
         />
+      )}
+
+      {/* 工件装配台模态框 */}
+      {composerInitialCode !== null && (
+        <ArtifactComposerModal
+          initialCode={composerInitialCode}
+          existingFilenames={existingFilenames}
+          onClose={() => setComposerInitialCode(null)}
+          onSave={handleSaveComposerArtifact}
+        />
+      )}
+
+      {/* 全局拖拽释放 HUD 视觉蒙层 */}
+      {isDragOver && (
+        <div className="fixed inset-0 z-50 bg-sky-950/80 backdrop-blur-md border-4 border-dashed border-sky-400 flex flex-col items-center justify-center gap-3 text-sky-200 pointer-events-none select-none animate-in fade-in">
+          <UploadCloud className="w-16 h-16 text-sky-400 animate-bounce" />
+          <div className="text-xl font-bold font-mono">释放以封印新工件</div>
+          <div className="text-xs font-mono text-sky-300/80">
+            支持任意 .html 标本文件，自动提取标题并进入装配台
+          </div>
+        </div>
       )}
     </div>
   );

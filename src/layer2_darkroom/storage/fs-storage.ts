@@ -113,6 +113,44 @@ export class GalleryStorage {
     }
   }
 
+  /**
+   * 创建并固化一个新工件，自动建立创世底片 REV:1
+   */
+  public async createArtifact(
+    filename: string,
+    content: string,
+    name: string,
+    tags: string[] = ['形态:原生html', '状态:新建'],
+  ): Promise<Artifact> {
+    const newMeta: ArtifactMeta = {
+      id: `art_${Math.random().toString(16).slice(2, 10)}`,
+      name,
+      filename,
+      tags,
+      currentRevision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (this.dirHandle) {
+      // 1. 物理写入 HTML 源文件
+      const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+
+      // 2. 建立 REV:1 创世底片
+      await this.recordNegativeRevision(filename, 1, content, 'genesis', '初始导入创世底片');
+
+      // 3. 记录元数据
+      await this.saveMeta(newMeta);
+    }
+
+    return {
+      meta: newMeta,
+      sourceCode: content,
+    };
+  }
+
   public async scanArtifacts(): Promise<Artifact[]> {
     if (!this.dirHandle) {
       return this.getMockArtifacts();

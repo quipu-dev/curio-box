@@ -1,10 +1,12 @@
-import { FolderOpen, Moon, Sun } from 'lucide-react';
+import { Clipboard, FolderOpen, Moon, Plus, Sun } from 'lucide-react';
 import type React from 'react';
 
 interface HeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onPickDirectory: () => void;
+  onImportFromClipboard: () => void;
+  onOpenNewArtifactComposer: () => void;
   hasDirectory: boolean;
   pendingDirectoryName?: string;
   onRequestPendingPermission?: () => void;
@@ -16,6 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   onPickDirectory,
+  onImportFromClipboard,
+  onOpenNewArtifactComposer,
   hasDirectory,
   pendingDirectoryName,
   onRequestPendingPermission,
@@ -43,7 +47,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenNewArtifactComposer}
+          className="flex items-center gap-1.5 bg-main text-surface px-3 py-1.5 text-xs font-mono font-medium hover:opacity-90 transition-opacity rounded"
+          title="创建新工件标本"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>新建工件</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onImportFromClipboard}
+          className="flex items-center gap-1.5 border border-border px-3 py-1.5 text-xs font-mono hover:bg-border transition-colors rounded text-muted hover:text-main"
+          title="从剪贴板自动萃取并导入工件"
+        >
+          <Clipboard className="w-3.5 h-3.5 text-sky-400" />
+          <span>剪贴板导入</span>
+        </button>
+
         {/* 如果有上次挂载且待重新授权的目录，提供一键重新连接按钮 */}
         {pendingDirectoryName && !hasDirectory && onRequestPendingPermission && (
           <button

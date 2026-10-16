@@ -144,7 +144,7 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
 
   // 复制带格式的完整提示词上下文
   const handleCopyPromptContext = () => {
-    const prompt = `请针对以下工件代码提供修改差量。请严格遵循 patch_file 指令协议输出，示例如下：
+    const prompt = `请针对以下工件代码提供修改指令。请严格遵循 act 指令协议输出，示例如下：
 
 \`\`\`act
 patch_file
@@ -156,11 +156,11 @@ patch_file
 <替换后的新代码行>
 \`\`\`
 
-如需为工件补充或调整标签，可附带 add_tag 指令：
+如需为工件补充或调整标签，可附带 add_tag 指令（支持空格或换行分隔标签）：
 \`\`\`act
 add_tag
 \`\`\`
-\`\`\`tag
+\`\`\`
 领域:图形学 物理:粒子系统
 \`\`\`
 
@@ -245,13 +245,13 @@ ${artifact.sourceCode}
       setPatchInput('');
       toast.success(
         hasCodeChange
-          ? `补丁已应用！升级至 REV:${nextRev}${hasTagChange ? '，标签已同步' : ''}`
-          : '标签指令已成功更新',
+          ? `指令已执行！升级至 REV:${nextRev}${hasTagChange ? '，标签已同步' : ''}`
+          : '标签指令已成功执行',
       );
       await refreshHistory();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`应用失败: ${msg}`);
+      toast.error(`执行失败: ${msg}`);
     }
   };
 
@@ -509,7 +509,7 @@ ${artifact.sourceCode}
                 }`}
               >
                 <Code2 className="w-3.5 h-3.5 text-sky-400" />
-                <span>AI 差量补丁</span>
+                <span>暗房指令台</span>
               </button>
               <button
                 type="button"
@@ -571,7 +571,7 @@ ${artifact.sourceCode}
                     <>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] uppercase text-muted tracking-wider">
-                          提示词协同与 Patch FSM
+                          提示词协同与指令控制台
                         </span>
                         <button
                           type="button"
@@ -590,7 +590,15 @@ ${artifact.sourceCode}
                       <textarea
                         value={patchInput}
                         onChange={(e) => setPatchInput(e.target.value)}
-                        placeholder={`粘贴大模型生成的差量代码块：
+                        placeholder={`粘贴大模型生成的指令块（支持 patch_file / write_file / add_tag 等）：
+\`\`\`act
+add_tag
+\`\`\`
+\`\`\`
+形态:webgl 物理:流体
+\`\`\`
+
+或差量补丁指令：
 \`\`\`act
 patch_file
 \`\`\`
@@ -609,7 +617,7 @@ patch_file
                           onClick={handleApplyPatch}
                           className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 transition-opacity"
                         >
-                          应用差量补丁 (升级至 REV:{artifact.meta.currentRevision + 1})
+                          执行命令
                         </button>
                       </div>
                     </>

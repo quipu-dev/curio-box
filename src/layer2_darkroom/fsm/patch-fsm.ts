@@ -1,194 +1,118 @@
 import type { PatchAction, PatchCommand } from '@/types';
 
-interface FenceDelimiter {
-  char: '`' | '~';
-  length: number;
+export interface Statement {
+  act: string;
+  contexts: string[];
 }
 
-enum FSMState {
-  SEEKING_ACT = 0,
-  IN_ACT = 1,
-  SEEKING_OLD_DOC = 2,
-  IN_OLD_DOC = 3,
-  SEEKING_NEW_DOC = 4,
-  IN_NEW_DOC = 5,
-  SEEKING_TAG = 6,
-  IN_TAG = 7,
+/**
+ * 遵循 Quipu 规范的通用代码块解析器：
+ * 1. 任何带有 act 标识的围栏作为新指令语句起点。
+ * 2. 随后的任意代码块（无论是否带语言标签）均作为该指令的 contexts 参数收集。
+ * 3. 严格开闭围栏对称匹配，支持 ``` 与 ~~~。
+ */
+export class StateBlockParser {
+  private readonly fenceStartRegex = /^(`{3,}|~{3,})(.*)$/;
+
+  public parse(text: string): Statement[] {
+    const statements: Statement[] = [];
+    let currentStatement: Statement | null = null;
+
+    const lines = text.split(/\r?\n/);
+    let inBlock = false;
+    let currentFence = '';
+    let currentLang = '';
+    let blockLines: string[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      if (!inBlock) {
+        const match = trimmedLine.match(this.fenceStartRegex);
+        if (match) {
+          inBlock = true;
+          currentFence = match[1];
+          currentLang = match[2].trim().toLowerCase();
+          blockLines = [];
+        }
+      } else {
+        if (trimmedLine === currentFence) {
+          inBlock = false;
+          let fullContent = blockLines.join('\n');
+          // 仿照 Quipu 统一剔除尾部单个多余换行符
+          if (fullContent.endsWith('\n')) {
+            fullContent = fullContent.slice(0, -1);
+          }
+
+          if (currentLang === 'act') {
+            const actionName = fullContent.trim();
+            currentStatement = { act: actionName, contexts: [] };
+            statements.push(currentStatement);
+          } else if (currentStatement) {
+            currentStatement.contexts.push(fullContent);
+          }
+
+          currentFence = '';
+          currentLang = '';
+          blockLines = [];
+        } else {
+          blockLines.push(line);
+        }
+      }
+    }
+
+    return statements;
+  }
 }
 
+/**
+ * 暗房指令调度器：将通用的 Statement 序列映射为工件系统能够执行的 PatchCommand
+ */
 export class DarkroomPatchFSM {
-  private state: FSMState = FSMState.SEEKING_ACT;
-  private currentFence: FenceDelimiter | null = null;
-  private bufferAction = '';
-  private bufferOldDoc: string[] = [];
-  private bufferNewDoc: string[] = [];
-  private commands: PatchCommand[] = [];
-
-  private readonly fenceOpenRegex = /^(`{3,}|~{3,})\s*([a-zA-Z0-9_-]*)\s*$/;
+  private parser = new StateBlockParser();
 
   public parse(input: string): PatchCommand[] {
-    this.reset();
-    const lines = input.split(/\r?\n/);
-    for (const line of lines) {
-      this.consumeLine(line);
-    }
-    return this.commands;
-  }
+    const statements = this.parser.parse(input);
+    const commands: PatchCommand[] = [];
 
-  public reset(): void {
-    this.state = FSMState.SEEKING_ACT;
-    this.currentFence = null;
-    this.bufferAction = '';
-    this.bufferOldDoc = [];
-    this.bufferNewDoc = [];
-    this.commands = [];
-  }
+    for (const stmt of statements) {
+      const rawAct = stmt.act.trim();
+      const tokens = rawAct.split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) continue;
 
-  private consumeLine(line: string): void {
-    switch (this.state) {
-      case FSMState.SEEKING_ACT: {
-        const match = line.match(this.fenceOpenRegex);
-        if (match && match[2].trim() === 'act') {
-          this.currentFence = this.extractFence(match[1]);
-          this.state = FSMState.IN_ACT;
-          this.bufferAction = '';
+      const action = tokens[0] as PatchAction;
+
+      if (action === 'add_tag' || action === 'remove_tag') {
+        // 允许从 act 行内（如 add_tag tag1）或后续 contexts 块中提取标签
+        const tagTokens: string[] = tokens.slice(1);
+        for (const ctx of stmt.contexts) {
+          tagTokens.push(...ctx.trim().split(/\s+/).filter(Boolean));
         }
-        break;
-      }
 
-      case FSMState.IN_ACT: {
-        if (this.isMatchingClosingFence(line)) {
-          const act = this.bufferAction.trim();
-          if (act === 'add_tag' || act === 'remove_tag') {
-            this.state = FSMState.SEEKING_TAG;
-          } else {
-            this.state = FSMState.SEEKING_OLD_DOC;
-          }
-          this.currentFence = null;
-        } else {
-          this.bufferAction += line.trim();
+        if (tagTokens.length > 0) {
+          commands.push({
+            action,
+            oldDoc: '',
+            newDoc: stmt.contexts.join('\n'),
+            tags: tagTokens,
+          });
         }
-        break;
-      }
-
-      case FSMState.SEEKING_TAG: {
-        const match = line.match(this.fenceOpenRegex);
-        if (
-          match &&
-          (match[2].trim() === 'tag' || match[2].trim() === 'tags' || match[2].trim() === 'text')
-        ) {
-          this.currentFence = this.extractFence(match[1]);
-          this.state = FSMState.IN_TAG;
-          this.bufferNewDoc = [];
-        }
-        break;
-      }
-
-      case FSMState.IN_TAG: {
-        if (this.isMatchingClosingFence(line)) {
-          this.emitCommand();
-          this.state = FSMState.SEEKING_ACT;
-          this.currentFence = null;
-        } else {
-          this.bufferNewDoc.push(line);
-        }
-        break;
-      }
-
-      case FSMState.SEEKING_OLD_DOC: {
-        const match = line.match(this.fenceOpenRegex);
-        if (match && match[2].trim() === 'old_doc') {
-          this.currentFence = this.extractFence(match[1]);
-          this.state = FSMState.IN_OLD_DOC;
-          this.bufferOldDoc = [];
-        }
-        break;
-      }
-
-      case FSMState.IN_OLD_DOC: {
-        if (this.isMatchingClosingFence(line)) {
-          this.state = FSMState.SEEKING_NEW_DOC;
-          this.currentFence = null;
-        } else {
-          this.bufferOldDoc.push(line);
-        }
-        break;
-      }
-
-      case FSMState.SEEKING_NEW_DOC: {
-        const match = line.match(this.fenceOpenRegex);
-        if (match && match[2].trim() === 'new_doc') {
-          this.currentFence = this.extractFence(match[1]);
-          this.state = FSMState.IN_NEW_DOC;
-          this.bufferNewDoc = [];
-        }
-        break;
-      }
-
-      case FSMState.IN_NEW_DOC: {
-        if (this.isMatchingClosingFence(line)) {
-          this.emitCommand();
-          this.state = FSMState.SEEKING_ACT;
-          this.currentFence = null;
-        } else {
-          this.bufferNewDoc.push(line);
-        }
-        break;
+      } else if (action === 'write_file') {
+        commands.push({
+          action,
+          oldDoc: '',
+          newDoc: stmt.contexts[0] || '',
+        });
+      } else if (action === 'patch_file') {
+        commands.push({
+          action,
+          oldDoc: stmt.contexts[0] || '',
+          newDoc: stmt.contexts[1] || '',
+        });
       }
     }
-  }
 
-  private extractFence(rawFence: string): FenceDelimiter {
-    return {
-      char: rawFence[0] as '`' | '~',
-      length: rawFence.length,
-    };
-  }
-
-  private isMatchingClosingFence(line: string): boolean {
-    if (!this.currentFence) return false;
-    const trimmed = line.trim();
-    if (trimmed.length < this.currentFence.length) return false;
-
-    const expectedChar = this.currentFence.char;
-    for (let i = 0; i < trimmed.length; i++) {
-      if (trimmed[i] !== expectedChar) return false;
-    }
-    return true;
-  }
-
-  private emitCommand(): void {
-    const rawAction = this.bufferAction.trim();
-    if (
-      rawAction !== 'patch_file' &&
-      rawAction !== 'write_file' &&
-      rawAction !== 'add_tag' &&
-      rawAction !== 'remove_tag'
-    ) {
-      return;
-    }
-
-    if (rawAction === 'add_tag' || rawAction === 'remove_tag') {
-      const parsedTags = this.bufferNewDoc
-        .join(' ')
-        .split(/\s+/)
-        .map((t) => t.trim())
-        .filter(Boolean);
-
-      this.commands.push({
-        action: rawAction as PatchAction,
-        oldDoc: '',
-        newDoc: this.bufferNewDoc.join('\n'),
-        tags: parsedTags,
-      });
-      return;
-    }
-
-    this.commands.push({
-      action: rawAction as PatchAction,
-      oldDoc: this.bufferOldDoc.join('\n'),
-      newDoc: this.bufferNewDoc.join('\n'),
-    });
+    return commands;
   }
 }
 

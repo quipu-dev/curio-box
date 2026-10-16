@@ -1,0 +1,1 @@
+{"meta_version": "1.0", "summary": "Capture: A .gitignore, A LICENSE, A piconfig.json", "type": "capture", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792120754.9213338, "duration_ms": 0}}

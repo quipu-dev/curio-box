@@ -1,0 +1,10 @@
+{
+  "presets": {
+    "full": {
+      "format": "xml",
+      "extension": ["ts", "tsx", "json", "css", "html"],
+      "paths": ["."],
+      "ignore": ["*.test.ts", "*.test.tsx"]
+    }
+  }
+}

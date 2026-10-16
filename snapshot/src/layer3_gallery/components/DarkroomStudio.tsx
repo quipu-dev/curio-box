@@ -1,8 +1,5 @@
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
-import {
-  AssetCacheEngine,
-  type AssetCacheStats,
-} from '@/layer2_darkroom/engine/asset-cache';
+import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { DarkroomApplier, DarkroomPatchFSM } from '@/layer2_darkroom/fsm/patch-fsm';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
@@ -267,7 +264,9 @@ ${artifact.sourceCode}
               type="button"
               onClick={() => setAspectRatio('fill')}
               className={`px-2 py-1 text-[11px] ${
-                aspectRatio === 'fill' ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-800/40 text-muted'
+                aspectRatio === 'fill'
+                  ? 'bg-zinc-800 text-white'
+                  : 'hover:bg-zinc-800/40 text-muted'
               }`}
             >
               自由铺满
@@ -276,7 +275,9 @@ ${artifact.sourceCode}
               type="button"
               onClick={() => setAspectRatio('16/9')}
               className={`px-2 py-1 text-[11px] ${
-                aspectRatio === '16/9' ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-800/40 text-muted'
+                aspectRatio === '16/9'
+                  ? 'bg-zinc-800 text-white'
+                  : 'hover:bg-zinc-800/40 text-muted'
               }`}
             >
               16:9
@@ -559,7 +560,9 @@ patch_file
                         ))}
                       </div>
                     ) : (
-                      <div className="text-muted text-[11px]">未探测到外部 CDN 依赖（纯原生工件）</div>
+                      <div className="text-muted text-[11px]">
+                        未探测到外部 CDN 依赖（纯原生工件）
+                      </div>
                     )}
 
                     {assetStats && assetStats.cached < assetStats.total && (

@@ -16,11 +16,31 @@ interface WindowWithFSA extends Window {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 }
 
+// 解析当前 URL Hash 路由状态
+function parseHashRoute(hash: string): {
+  type: 'gallery' | 'stage' | 'studio';
+  filename: string | null;
+} {
+  const clean = hash.replace(/^#\/?/, '');
+  const [route, ...rest] = clean.split('/');
+  const encodedName = rest.join('/');
+  if (encodedName) {
+    try {
+      const filename = decodeURIComponent(encodedName);
+      if (route === 'stage') return { type: 'stage', filename };
+      if (route === 'studio') return { type: 'studio', filename };
+    } catch {
+      // 容错处理
+    }
+  }
+  return { type: 'gallery', filename: null };
+}
+
 function MainApp() {
   const { toast } = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏放映中的工件物理文件名 (SSoT 单一事实来源)
+  // 网页全屏放映中的工件物理文件名
   const [stageFilename, setStageFilename] = useState<string | null>(null);
   // 独立暗房工作台中的工件物理文件名
   const [studioFilename, setStudioFilename] = useState<string | null>(null);
@@ -38,6 +58,60 @@ function MainApp() {
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // 1. 修复全屏视口滚动条溢出：当处于放映、暗房或弹窗态时锁死 body 滚动
+  useEffect(() => {
+    const isOverlayActive = Boolean(
+      stageFilename || studioFilename || inspectingFilename || composerInitialCode !== null,
+    );
+    if (isOverlayActive) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [stageFilename, studioFilename, inspectingFilename, composerInitialCode]);
+
+  // 2. Hash 路由双向同步机制
+  const syncFromHash = useCallback(() => {
+    const route = parseHashRoute(window.location.hash);
+    if (route.type === 'stage') {
+      setStageFilename(route.filename);
+      setStudioFilename(null);
+    } else if (route.type === 'studio') {
+      setStudioFilename(route.filename);
+      setStageFilename(null);
+    } else {
+      setStageFilename(null);
+      setStudioFilename(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash);
+    };
+  }, [syncFromHash]);
+
+  const navigateToStage = useCallback((filename: string) => {
+    window.location.hash = `#/stage/${encodeURIComponent(filename)}`;
+  }, []);
+
+  const navigateToStudio = useCallback((filename: string) => {
+    window.location.hash = `#/studio/${encodeURIComponent(filename)}`;
+  }, []);
+
+  const navigateToGallery = useCallback(() => {
+    if (window.location.hash) {
+      window.location.hash = '';
+    } else {
+      setStageFilename(null);
+      setStudioFilename(null);
+    }
+  }, []);
 
   const loadArtifacts = useCallback(async () => {
     const list = await galleryStorage.scanArtifacts();
@@ -281,10 +355,10 @@ function MainApp() {
       setInspectingFilename(newFilename);
     }
     if (stageFilename === oldFilename) {
-      setStageFilename(newFilename);
+      window.location.hash = `#/stage/${encodeURIComponent(newFilename)}`;
     }
     if (studioFilename === oldFilename) {
-      setStudioFilename(newFilename);
+      window.location.hash = `#/studio/${encodeURIComponent(newFilename)}`;
     }
   };
 
@@ -295,11 +369,8 @@ function MainApp() {
     if (inspectingFilename === filename) {
       setInspectingFilename(null);
     }
-    if (stageFilename === filename) {
-      setStageFilename(null);
-    }
-    if (studioFilename === filename) {
-      setStudioFilename(null);
+    if (stageFilename === filename || studioFilename === filename) {
+      navigateToGallery();
     }
   };
 
@@ -339,8 +410,8 @@ function MainApp() {
               <ArtifactCard
                 key={artifact.meta.filename}
                 artifact={artifact}
-                onOpenStage={(art) => setStageFilename(art.meta.filename)}
-                onOpenStudio={(art) => setStudioFilename(art.meta.filename)}
+                onOpenStage={(art) => navigateToStage(art.meta.filename)}
+                onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
                 onOpenInspector={(art) => setInspectingFilename(art.meta.filename)}
               />
             ))}
@@ -357,11 +428,8 @@ function MainApp() {
       {stageArtifact && (
         <FullscreenStage
           artifact={stageArtifact}
-          onClose={() => setStageFilename(null)}
-          onOpenDarkroom={(art) => {
-            setStageFilename(null);
-            setStudioFilename(art.meta.filename);
-          }}
+          onClose={navigateToGallery}
+          onOpenDarkroom={(art) => navigateToStudio(art.meta.filename)}
           onUpdateArtifact={handleUpdateArtifact}
         />
       )}
@@ -370,11 +438,8 @@ function MainApp() {
       {studioArtifact && (
         <DarkroomStudio
           artifact={studioArtifact}
-          onBackToGallery={() => setStudioFilename(null)}
-          onOpenStage={(art) => {
-            setStudioFilename(null);
-            setStageFilename(art.meta.filename);
-          }}
+          onBackToGallery={navigateToGallery}
+          onOpenStage={(art) => navigateToStage(art.meta.filename)}
           onUpdateArtifact={handleUpdateArtifact}
         />
       )}
@@ -386,11 +451,11 @@ function MainApp() {
           onClose={() => setInspectingFilename(null)}
           onOpenStage={(art) => {
             setInspectingFilename(null);
-            setStageFilename(art.meta.filename);
+            navigateToStage(art.meta.filename);
           }}
           onOpenStudio={(art) => {
             setInspectingFilename(null);
-            setStudioFilename(art.meta.filename);
+            navigateToStudio(art.meta.filename);
           }}
           onUpdateTags={handleUpdateTags}
           onUpdateRating={handleUpdateRating}

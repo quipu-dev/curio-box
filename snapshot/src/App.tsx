@@ -14,7 +14,7 @@ interface WindowWithFSA extends Window {
 export function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏展演中的工件
+  // 网页全屏放映中的工件
   const [stageArtifact, setStageArtifact] = useState<Artifact | null>(null);
   // 独立暗房工作台中的工件
   const [studioArtifact, setStudioArtifact] = useState<Artifact | null>(null);
@@ -158,27 +158,31 @@ export function App() {
         )}
       </main>
 
-      {/* 活体全屏放映舞台 (Fullscreen Stage) */}
-      <FullscreenStage
-        artifact={stageArtifact}
-        onClose={() => setStageArtifact(null)}
-        onOpenDarkroom={(art) => {
-          setStageArtifact(null);
-          setStudioArtifact(art);
-        }}
-        onUpdateArtifact={handleUpdateArtifact}
-      />
+      {/* 活体全屏放映舞台 (显式条件挂载) */}
+      {stageArtifact && (
+        <FullscreenStage
+          artifact={stageArtifact}
+          onClose={() => setStageArtifact(null)}
+          onOpenDarkroom={(art) => {
+            setStageArtifact(null);
+            setStudioArtifact(art);
+          }}
+          onUpdateArtifact={handleUpdateArtifact}
+        />
+      )}
 
-      {/* 独立全屏暗房工作台 (Darkroom Studio) */}
-      <DarkroomStudio
-        artifact={studioArtifact}
-        onBackToGallery={() => setStudioArtifact(null)}
-        onOpenStage={(art) => {
-          setStudioArtifact(null);
-          setStageArtifact(art);
-        }}
-        onUpdateArtifact={handleUpdateArtifact}
-      />
+      {/* 独立全屏暗房工作台 (显式条件挂载) */}
+      {studioArtifact && (
+        <DarkroomStudio
+          artifact={studioArtifact}
+          onBackToGallery={() => setStudioArtifact(null)}
+          onOpenStage={(art) => {
+            setStudioArtifact(null);
+            setStageArtifact(art);
+          }}
+          onUpdateArtifact={handleUpdateArtifact}
+        />
+      )}
     </div>
   );
 }

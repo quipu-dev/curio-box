@@ -1,7 +1,7 @@
 export interface ExternalAsset {
   url: string;
   type: 'script' | 'style';
-  status: 'cached' | 'fetching' | 'pending' | 'failed';
+  status: 'cached' | 'fetching' | 'pending' | 'failed' | 'cors_restricted';
 }
 
 export interface AssetCacheStats {
@@ -53,26 +53,44 @@ export const AssetCacheEngine = {
   },
 
   /**
-   * 抓取并将外部资源保存至本地 Cache Storage
+   * 获取缓存的文本内容
+   */
+  async getCachedText(url: string): Promise<string | null> {
+    if (typeof window === 'undefined' || !('caches' in window)) return null;
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      const response = await cache.match(url);
+      if (response) {
+        return await response.text();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * 抓取并将外部资源保存至本地 Cache Storage（静默处理 CORS 失败）
    */
   async cacheAsset(url: string): Promise<boolean> {
     if (typeof window === 'undefined' || !('caches' in window)) return false;
     try {
       const cache = await caches.open(CACHE_NAME);
+      // 发起请求，注意若对方服务端未返回 Access-Control-Allow-Origin，将触发可捕获的 TypeError
       const response = await fetch(url, { mode: 'cors' });
       if (response.ok) {
         await cache.put(url, response.clone());
         return true;
       }
       return false;
-    } catch (err) {
-      console.warn(`[AssetCache] 缓存资源失败 (${url}):`, err);
+    } catch {
+      // 对不支持 CORS fetch 的 CDN 静默降级，不打印控制台错误打扰用户
       return false;
     }
   },
 
   /**
-   * 解析 HTML，将已缓存的远程外链替换为本地 Blob URL，未缓存的在后台异步预热
+   * 解析 HTML：已缓存资源以内联 script/style 安全注入（规避 sandbox blob 跨源限制），未缓存资源后台静默预热
    */
   async resolveAndWarmupHtml(
     rawHtml: string,
@@ -80,7 +98,7 @@ export const AssetCacheEngine = {
   ): Promise<{ resolvedHtml: string; stats: AssetCacheStats }> {
     const rawAssets = this.detectExternalAssets(rawHtml);
     if (rawAssets.length === 0) {
-      const stats = { total: 0, cached: 0, assets: [] };
+      const stats: AssetCacheStats = { total: 0, cached: 0, assets: [] };
       onProgress?.(stats);
       return { resolvedHtml: rawHtml, stats };
     }
@@ -92,25 +110,39 @@ export const AssetCacheEngine = {
     for (const asset of rawAssets) {
       const alreadyCached = await this.isCached(asset.url);
       if (alreadyCached) {
-        try {
-          const cache = await caches.open(CACHE_NAME);
-          const response = await cache.match(asset.url);
-          if (response) {
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            modifiedHtml = modifiedHtml.split(asset.url).join(blobUrl);
-            cachedCount++;
-            assetsWithStatus.push({ ...asset, status: 'cached' });
-            continue;
+        const textContent = await this.getCachedText(asset.url);
+        if (textContent) {
+          cachedCount++;
+          assetsWithStatus.push({ ...asset, status: 'cached' });
+
+          if (asset.type === 'script') {
+            // 将 <script src="..."></script> 完整替换为内联脚本
+            const scriptTagPattern = new RegExp(
+              `<script\\s+[^>]*src=["']${escapeRegExp(asset.url)}["'][^>]*>\\s*<\\/script>`,
+              'gi',
+            );
+            modifiedHtml = modifiedHtml.replace(
+              scriptTagPattern,
+              `<script data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</script>`,
+            );
+          } else {
+            // 将 <link href="..." /> 完整替换为内联样式
+            const linkTagPattern = new RegExp(
+              `<link\\s+[^>]*href=["']${escapeRegExp(asset.url)}["'][^>]*\\/?>`,
+              'gi',
+            );
+            modifiedHtml = modifiedHtml.replace(
+              linkTagPattern,
+              `<style data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</style>`,
+            );
           }
-        } catch {
-          // 降级使用原链接
+          continue;
         }
       }
 
       assetsWithStatus.push({ ...asset, status: 'pending' });
 
-      // 后台非阻塞预热拉取
+      // 后台静默预热，不阻塞当前装载
       this.cacheAsset(asset.url).catch(() => {});
     }
 
@@ -136,3 +168,7 @@ export const AssetCacheEngine = {
     }
   },
 };
+
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

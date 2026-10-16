@@ -246,7 +246,8 @@ export class GalleryStorage {
         revision,
         timestamp: new Date().toISOString(),
         action,
-        description: description || (action === 'genesis' ? '创世底片' : `底片快照 REV:${revision}`),
+        description:
+          description || (action === 'genesis' ? '创世底片' : `底片快照 REV:${revision}`),
       });
       ledger.sort((a, b) => a.revision - b.revision);
 

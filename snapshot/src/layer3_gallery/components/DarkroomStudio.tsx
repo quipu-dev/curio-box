@@ -20,7 +20,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Play,
-  RotateCcw,
   Sparkles,
   Square,
   Tag as TagIcon,
@@ -201,7 +200,7 @@ ${artifact.sourceCode}
         nextCode,
         nextRev,
         'patch',
-        `AI 差量注入应用`,
+        'AI 差量注入应用',
       );
 
       const updatedMeta = {
@@ -519,7 +518,8 @@ ${artifact.sourceCode}
                         <span>当前处于 REV:{viewingSnapshot.revision} 历史检视态</span>
                       </div>
                       <p className="text-[11px] text-zinc-300 leading-relaxed">
-                        为防止代码基准冲突，历史检视态下 AI 差量补丁已自动锁定。您可以基于当前快照生成新分支，或返回最新物理版本。
+                        为防止代码基准冲突，历史检视态下 AI
+                        差量补丁已自动锁定。您可以基于当前快照生成新分支，或返回最新物理版本。
                       </p>
                       <div className="flex gap-2 mt-1">
                         <button

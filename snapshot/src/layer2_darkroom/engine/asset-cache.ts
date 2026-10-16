@@ -24,14 +24,13 @@ export const AssetCacheEngine = {
     const scriptRegex = /<script\s+[^>]*src=["'](https?:\/\/[^"']+)["'][^>]*>/gi;
     const styleRegex = /<link\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>/gi;
 
-    let match: RegExpExecArray | null;
-    while ((match = scriptRegex.exec(html)) !== null) {
+    for (const match of html.matchAll(scriptRegex)) {
       if (match[1]) {
         assets.push({ url: match[1], type: 'script', status: 'pending' });
       }
     }
 
-    while ((match = styleRegex.exec(html)) !== null) {
+    for (const match of html.matchAll(styleRegex)) {
       const fullTag = match[0].toLowerCase();
       if (fullTag.includes('stylesheet') && match[1]) {
         assets.push({ url: match[1], type: 'style', status: 'pending' });

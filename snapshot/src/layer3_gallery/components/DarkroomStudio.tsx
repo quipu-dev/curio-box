@@ -12,8 +12,6 @@ import {
   Camera,
   Check,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Code2,
   Copy,
   Database,

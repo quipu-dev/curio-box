@@ -143,6 +143,17 @@ ${artifact.sourceCode}
     setStatusMessage(`一阶回滚成功：已安全复原至 REV:${prevRev}`);
   };
 
+  const placeholderText = `粘贴大模型生成的差量代码块：
+\`\`\`act
+patch_file
+\`\`\`
+\`\`\`old_doc
+ctx.fillStyle = '#05050a';
+\`\`\`
+\`\`\`new_doc
+ctx.fillStyle = '#001a33';
+\`\`\``;
+
   return (
     <div
       className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8"
@@ -241,22 +252,13 @@ ${artifact.sourceCode}
             <div className="flex flex-col flex-1 gap-2 min-h-[220px]">
               <div className="flex justify-between items-center text-[10px] uppercase text-muted tracking-wider">
                 <span>AI 差量注入器 (Patch FSM)</span>
-                <span className="text-[9px] lowercase">支持 ``` 与 ~~~ 动态围栏</span>
+                <span className="text-[9px] lowercase">采用 ``` 围栏语法</span>
               </div>
 
               <textarea
                 value={patchInput}
                 onChange={(e) => setPatchInput(e.target.value)}
-                placeholder={`粘贴大模型生成的差量代码块：
-`````act
-patch_file
-`````
-`````old_doc
-ctx.fillStyle = '#05050a';
-`````
-`````new_doc
-ctx.fillStyle = '#001a33';
-``````}
+                placeholder={placeholderText}
                 className="flex-1 w-full bg-code text-zinc-300 border border-border p-3 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
               />
 

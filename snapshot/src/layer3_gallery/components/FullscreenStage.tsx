@@ -24,11 +24,12 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   const [isNativeFullscreen, setIsNativeFullscreen] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [position, setPosition] = useState<{ x: number; y: number }>({
-    x: typeof window !== 'undefined' ? window.innerWidth / 2 - 130 : 200,
+    x: typeof window !== 'undefined' ? window.innerWidth / 2 : 300,
     y: 0,
   });
 
   const isDraggingRef = useRef<boolean>(false);
+  const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
@@ -61,9 +62,10 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     };
   }, [onClose]);
 
-  // 拖拽手柄移动处理
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  // 拖拽手柄与点击处理
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     isDraggingRef.current = true;
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     dragOffsetRef.current = {
       x: e.clientX - position.x,
       y: e.clientY - position.y,
@@ -71,16 +73,26 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!isDraggingRef.current) return;
-    const maxX = window.innerWidth - 260;
-    const maxY = window.innerHeight - 60;
-    const nextX = Math.max(10, Math.min(maxX, e.clientX - dragOffsetRef.current.x));
+    // 限制中心点在视口边缘内，确保两侧展开后不完全出界
+    const minX = 140;
+    const maxX = window.innerWidth - 140;
+    const maxY = window.innerHeight - 50;
+    const nextX = Math.max(minX, Math.min(maxX, e.clientX - dragOffsetRef.current.x));
     const nextY = Math.max(0, Math.min(maxY, e.clientY - dragOffsetRef.current.y));
     setPosition({ x: nextX, y: nextY });
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isDraggingRef.current) {
+      const deltaX = Math.abs(e.clientX - dragStartPosRef.current.x);
+      const deltaY = Math.abs(e.clientY - dragStartPosRef.current.y);
+      // 位移小于 4px 视作点击，切换展开/收拢
+      if (deltaX < 4 && deltaY < 4) {
+        setIsExpanded((prev) => !prev);
+      }
+    }
     isDraggingRef.current = false;
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
@@ -136,10 +148,13 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         }}
       />
 
-      {/* 仿虚拟机悬浮浮动坞 (VM-like Floating Dock) */}
+      {/* 仿虚拟机悬浮浮动坞 (VM-like Floating Dock，以中心点为对称轴向两侧展开) */}
       <div
-        style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }}
-        className="absolute top-0 left-0 z-50 transition-all duration-150 ease-out flex flex-col items-center"
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+        }}
+        className="absolute -translate-x-1/2 z-50 flex flex-col items-center select-none"
         onMouseEnter={() => setIsExpanded(true)}
         onMouseLeave={() => {
           if (!isDraggingRef.current) {
@@ -147,27 +162,33 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           }
         }}
       >
-        {/* 默认常态下的微光收起细线/拉手 */}
-        <div
-          role="presentation"
+        {/* 顶部微光可拖拽/可点击拉手（原生 button，键盘无障碍友好） */}
+        <button
+          type="button"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          className={`flex items-center justify-center cursor-grab active:cursor-grabbing transition-all duration-300 ${
+          className={`flex items-center justify-center cursor-grab active:cursor-grabbing border-0 outline-none p-0 transition-all duration-300 ease-out origin-center ${
             isExpanded
-              ? 'h-3 w-28 bg-zinc-700/80 rounded-t-md'
-              : 'h-1.5 w-20 bg-zinc-400/40 hover:bg-zinc-200/80 rounded-full my-1 shadow-[0_0_8px_rgba(255,255,255,0.2)]'
+              ? 'h-3 w-32 bg-zinc-700/90 rounded-t-md'
+              : 'h-1.5 w-20 bg-zinc-300/40 hover:bg-zinc-200/90 hover:h-2 rounded-full my-1 shadow-[0_0_10px_rgba(255,255,255,0.3)]'
           }`}
-          title="按住拖拽移动，鼠标悬浮展开控制坞"
+          title="点击展开/收起，按住拖动位置"
         >
           {isExpanded && <GripHorizontal className="w-3.5 h-3.5 text-zinc-400" />}
-        </div>
+        </button>
 
-        {/* 展开后的控制面板 */}
-        {isExpanded && (
-          <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-3 py-1.5 rounded-b-lg shadow-2xl text-xs font-mono text-zinc-200 animate-in fade-in slide-in-from-top-1">
+        {/* 从中间向两边对称展开的控制面板 */}
+        <div
+          className={`transition-all duration-300 ease-out origin-center overflow-hidden flex flex-col items-center ${
+            isExpanded
+              ? 'max-w-xl opacity-100 scale-100'
+              : 'max-w-0 opacity-0 scale-95 pointer-events-none'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-3 py-1.5 rounded-b-lg shadow-2xl text-xs font-mono text-zinc-200 whitespace-nowrap">
             <span
-              className="text-[11px] text-zinc-400 max-w-[130px] truncate mr-1.5"
+              className="text-[11px] text-zinc-400 max-w-[140px] truncate mr-1.5"
               title={artifact.meta.name}
             >
               {artifact.meta.name}
@@ -215,11 +236,11 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <span>退出 (Esc)</span>
             </button>
           </div>
-        )}
+        </div>
 
         {/* 状态轻提示 */}
         {statusMessage && (
-          <div className="mt-2 bg-black/80 border border-zinc-700 text-[11px] text-zinc-300 px-2 py-1 rounded shadow-lg pointer-events-none">
+          <div className="mt-2 bg-black/85 border border-zinc-700 text-[11px] text-zinc-300 px-2.5 py-1 rounded shadow-lg pointer-events-none whitespace-nowrap animate-in fade-in">
             {statusMessage}
           </div>
         )}

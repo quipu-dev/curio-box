@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 实现工件默认网页全屏展演与虚拟机级浮动隐藏控制坞", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792122913.9507582, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 优化浮动坞为中心对称向两侧展开并支持点击触发", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "0.5.1", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1792123105.3443024, "duration_ms": 0}}

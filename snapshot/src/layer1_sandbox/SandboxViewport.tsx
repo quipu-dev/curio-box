@@ -92,6 +92,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
         throw new Error('沙箱未激活，无法定格封印快照');
       }
 
+      const contentWindow = iframe.contentWindow;
       const requestId = `req_${Math.random().toString(36).slice(2, 10)}`;
 
       return new Promise<Blob>((resolve, reject) => {
@@ -130,7 +131,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
 
         window.addEventListener('message', handleResponse);
 
-        iframe.contentWindow.postMessage(
+        contentWindow.postMessage(
           {
             type: 'CURIO_CAPTURE_REQUEST',
             requestId: requestId,

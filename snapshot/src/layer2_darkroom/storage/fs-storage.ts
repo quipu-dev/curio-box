@@ -5,15 +5,6 @@ const POSTERS_DIR = 'posters';
 const NEGATIVES_DIR = 'negatives';
 const META_FILE = 'meta.json';
 
-interface WritableFileStream {
-  write(data: unknown): Promise<void>;
-  close(): Promise<void>;
-}
-
-interface CustomFileHandle extends FileSystemFileHandle {
-  createWritable(): Promise<WritableFileStream>;
-}
-
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
 
@@ -69,9 +60,9 @@ export class GalleryStorage {
   ): Promise<void> {
     if (!this.dirHandle) return;
 
-    const fileHandle = (await this.dirHandle.getFileHandle(filename, {
+    const fileHandle = await this.dirHandle.getFileHandle(filename, {
       create: true,
-    })) as CustomFileHandle;
+    });
     const writable = await fileHandle.createWritable();
     await writable.write(newContent);
     await writable.close();
@@ -87,9 +78,9 @@ export class GalleryStorage {
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
     const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
     const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-    const posterHandle = (await postersDir.getFileHandle(posterFilename, {
+    const posterHandle = await postersDir.getFileHandle(posterFilename, {
       create: true,
-    })) as CustomFileHandle;
+    });
 
     const writable = await posterHandle.createWritable();
     await writable.write(blob);
@@ -104,9 +95,9 @@ export class GalleryStorage {
     allMeta[meta.filename] = meta;
 
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = (await galleryDir.getFileHandle(META_FILE, {
+    const metaHandle = await galleryDir.getFileHandle(META_FILE, {
       create: true,
-    })) as CustomFileHandle;
+    });
     const writable = await metaHandle.createWritable();
     await writable.write(JSON.stringify(allMeta, null, 2));
     await writable.close();
@@ -124,10 +115,10 @@ export class GalleryStorage {
       create: true,
     });
 
-    const revHandle = (await baseDir.getFileHandle(
+    const revHandle = await baseDir.getFileHandle(
       `rev-${String(revision).padStart(4, '0')}.snapshot`,
       { create: true },
-    )) as CustomFileHandle;
+    );
     const writable = await revHandle.createWritable();
     await writable.write(content);
     await writable.close();

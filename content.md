@@ -1,171 +1,346 @@
-收到，发现 Biome 报告了 3 处关于无障碍语义化（a11y）的代码规范错误：`ArtifactCard` 中使用了 `<div role="button">`，以及 `DarkroomModal` 中使用了 `<div role="dialog">` 和在非交互容器上直接绑定 `onClick`。我将生成 Quipu 计划对其进行语义化重构与修复。
+这是两处 TypeScript 严格模式下的类型检查报错。第一处是由于 Promise 回调闭包导致对 `iframe.contentWindow` 的类型收窄失效；第二处是由于环境 DOM 类型库已内置 `FileSystemFileHandle` 与 `FileSystemWritableFileStream`，代码中手写的冗余继承接口产生了类型不兼容冲突。我将生成 Quipu 计划修复这两个类型错误。
 
-## [WIP] fix: 修复画廊卡片与暗房弹窗的 a11y 语义化标签与事件规范
+## [WIP] fix: 修复 iframe 闭包类型收窄与 FileSystemFileHandle 接口继承冲突
 
 ### 错误分析
 
-运行 `biome check --fix --unsafe .` 时捕获了 3 个阻断错误：
-
-1. **`ArtifactCard.tsx` - `lint/a11y/useSemanticElements`**：
-   在 `<div>` 上声明了 `role="button"`、`tabIndex={0}` 并手动绑定了键盘与点击事件。根据 ARIA 第一法则与 Biome a11y 规则，能使用原生 HTML 标签的场景严禁使用模拟方案，必须改用原生 `<button type="button">`。
-2. **`DarkroomModal.tsx` - `lint/a11y/useSemanticElements`**：
-   在外部遮罩层使用了 `<div role="dialog" aria-modal="true">`，触发了语义化替换建议，应使用原生 HTML `<dialog>` 元素。
-3. **`DarkroomModal.tsx` - `lint/a11y/useKeyWithClickEvents`**：
-   内层模态框容器为防止点击冒泡添加了 `onClick={(e) => e.stopPropagation()}`，但未配置对应的键盘响应事件，导致 a11y 告警。实际上外层点击遮罩只需判断 `e.target === e.currentTarget` 即可实现点击遮罩关闭，无需在子容器上增加阻止冒泡的监听器。
+1. **`SandboxViewport.tsx:133:9` (TS18047)**:
+   在 `onCaptureReady` 中虽然在外部进行了 `if (!iframe || !iframe.contentWindow)` 的空值检查，但在后续创建的 `new Promise((resolve, reject) => { ... })` 异步闭包内部，TypeScript 编译器无法保证对象的属性引用 `iframe.contentWindow` 在闭包执行时仍不为 `null`，因此报 `'iframe.contentWindow' is possibly 'null'`。
+2. **`fs-storage.ts:13:11` (TS2430)**:
+   TypeScript 的 `DOM` 类型库已完整包含了 File System Access API 规范中的 `FileSystemFileHandle` 与 `FileSystemWritableFileStream`。原代码中自定义的 `CustomFileHandle extends FileSystemFileHandle` 试图将 `createWritable()` 的返回值重写为简化的 `WritableFileStream`，缺少了规范中必需的 `seek`、`truncate`、`locked` 等属性，导致接口类型继承冲突报错。
 
 ### 用户需求
 
-消除 `pnpm run checkf` 时报告的 3 处 Biome Lint 报错，使组件符合无障碍规范和前端语义化开发要求，保证类型检查与 Lint 检查零错误通过。
+修复 `src/layer1_sandbox/SandboxViewport.tsx` 与 `src/layer2_darkroom/storage/fs-storage.ts` 中的 TypeScript 编译错误，使 `pnpm run checkf` 能够无错误通过。
 
 ### 评论
 
-现代前端开发与代码检查工具（如 Biome、axe）对 ARIA 与语义化标签的检验非常严格。使用原生 `<button>` 可以天然获得 Tab 聚焦和 Enter/Space 触发能力；使用 `e.target === e.currentTarget` 比在内层子节点绑定 `stopPropagation` 更干净且不会污染键盘与事件流。
+这是典型的 TypeScript 静态分析边界问题：
+- 在闭包内，将收窄后的对象属性赋值给局部常量（如 `const contentWindow = iframe.contentWindow;`）是标准的 TypeScript 防守范式，能确保类型收窄在闭包作用域内保持有效。
+- 对于现代浏览器已标准化的 Web API，优先依赖原生类型定义，避免二次定义不完整的兼容接口引发类型冲突。
 
 ### 目标
 
-1. 将 `ArtifactCard.tsx` 中的顶层交互容器重构为原生 `<button type="button">`，移除手动模拟的 `role`、`tabIndex` 与 `onKeyDown` 键盘逻辑，并保证样式对齐一致。
-2. 将 `DarkroomModal.tsx` 的最外层容器升级为原生 `<dialog open>`，并重置其默认外观样式。
-3. 优化模态框遮罩关闭逻辑，使用 `e.target === e.currentTarget` 判断，移除内部容器的 `onClick={(e) => e.stopPropagation()}`，彻底消除 `useKeyWithClickEvents` 报错。
+1. 在 `SandboxViewport.tsx` 中提取局部的不可变变量 `contentWindow`，消除异步回调中的 TS18047 错误。
+2. 在 `fs-storage.ts` 中移除冗余且不兼容的 `CustomFileHandle` 与 `WritableFileStream` 接口定义，直接使用原生 `FileSystemFileHandle`。
 
 ### 基本原理
 
-1. **ARIA 语义替换**：将带有 `role="button"` 的 `div` 改为 `<button type="button">`，并加上 `text-left w-full`，重置默认样式同时保留原有的 flex 布局与微交互阴影。
-2. **Dialog 规范**：使用 `<dialog open aria-modal="true">` 替代模拟弹窗，使用 Tailwind 的重置类（`m-0 p-4 border-0 max-w-none max-h-none`）清除浏览器的默认边框与间距，保持既有视觉效果。
-3. **事件委托精度化**：点击事件只在外层监听器中处理，当且仅当点击点为外层背景本身时触发 `onClose`，省去内层元素的空事件监听。
+1. **闭包常量收窄保持**：`const contentWindow = iframe.contentWindow;` 作为一个 `const` 引用，其类型在非空校验后被确定为 `Window`，闭包内对其进行访问不会被重新推断为包含 `null`。
+2. **复用原生 DOM 类型**：浏览器原生的 `FileSystemFileHandle.createWritable()` 返回的 `FileSystemWritableFileStream` 原生支持 `.write()` 与 `.close()`，直接利用原生类型省去了类型转换和冲突风险。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/ui #concept/ui #scope/dx #scope/ux #ai/instruct #task/domain/ui #task/object/a11y-compliance #task/action/bug-fix #task/state/begin #task/status/active
+#intent/fix #flow/ready #priority/high #comp/runtime #comp/build #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/type-safety #task/action/bug-fix #task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 规范化 `ArtifactCard.tsx` 的按钮语义化
+#### Acts 1: 修复 `SandboxViewport.tsx` 中的闭包类型收窄
 
-将卡片外层包裹层从 `<div role="button">` 改为原生 `<button type="button">`。
-
-~~~~~act
-patch_file
-src/layer3_gallery/components/ArtifactCard.tsx
-~~~~~
-~~~~~tsx.old
-export const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact, onOpenDarkroom }) => {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpenDarkroom(artifact)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpenDarkroom(artifact);
-        }
-      }}
-      className="bg-surface border border-border rounded overflow-hidden cursor-pointer hover:border-muted hover:-translate-y-0.5 transition-all flex flex-col group focus:outline-none focus:ring-1 focus:ring-muted"
-    >
-      <div className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center">
-~~~~~
-~~~~~tsx.new
-export const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact, onOpenDarkroom }) => {
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenDarkroom(artifact)}
-      className="text-left w-full bg-surface border border-border rounded overflow-hidden cursor-pointer hover:border-muted hover:-translate-y-0.5 transition-all flex flex-col group focus:outline-none focus:ring-1 focus:ring-muted"
-    >
-      <div className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center">
-~~~~~
+提取 `contentWindow` 局部不可变常量，确保异步回调内部的类型安全性。
 
 ~~~~~act
 patch_file
-src/layer3_gallery/components/ArtifactCard.tsx
+src/layer1_sandbox/SandboxViewport.tsx
 ~~~~~
 ~~~~~tsx.old
-        </div>
-      </div>
-    </div>
-  );
-};
+    onCaptureReady(async () => {
+      const iframe = iframeRef.current;
+      if (!iframe || !iframe.contentWindow) {
+        throw new Error('沙箱未激活，无法定格封印快照');
+      }
+
+      const requestId = `req_${Math.random().toString(36).slice(2, 10)}`;
+
+      return new Promise<Blob>((resolve, reject) => {
+        const timeoutTimer = setTimeout(() => {
+          window.removeEventListener('message', handleResponse);
+          reject(new Error('定格捕获超时：沙箱内未在规定时间内响应'));
+        }, 4000);
+
+        const handleResponse = async (event: MessageEvent) => {
+          if (
+            !event.data ||
+            event.data.type !== 'CURIO_CAPTURE_RESPONSE' ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+
+          clearTimeout(timeoutTimer);
+          window.removeEventListener('message', handleResponse);
+
+          if (event.data.error) {
+            reject(new Error(event.data.error));
+            return;
+          }
+
+          try {
+            const dataUrl = event.data.dataUrl;
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            resolve(blob);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            reject(new Error(`快照数据流转换失败: ${msg}`));
+          }
+        };
+
+        window.addEventListener('message', handleResponse);
+
+        iframe.contentWindow.postMessage(
+          {
+            type: 'CURIO_CAPTURE_REQUEST',
+            requestId: requestId,
+          },
+          '*',
+        );
+      });
+    });
 ~~~~~
 ~~~~~tsx.new
-        </div>
-      </div>
-    </button>
-  );
-};
+    onCaptureReady(async () => {
+      const iframe = iframeRef.current;
+      if (!iframe || !iframe.contentWindow) {
+        throw new Error('沙箱未激活，无法定格封印快照');
+      }
+
+      const contentWindow = iframe.contentWindow;
+      const requestId = `req_${Math.random().toString(36).slice(2, 10)}`;
+
+      return new Promise<Blob>((resolve, reject) => {
+        const timeoutTimer = setTimeout(() => {
+          window.removeEventListener('message', handleResponse);
+          reject(new Error('定格捕获超时：沙箱内未在规定时间内响应'));
+        }, 4000);
+
+        const handleResponse = async (event: MessageEvent) => {
+          if (
+            !event.data ||
+            event.data.type !== 'CURIO_CAPTURE_RESPONSE' ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+
+          clearTimeout(timeoutTimer);
+          window.removeEventListener('message', handleResponse);
+
+          if (event.data.error) {
+            reject(new Error(event.data.error));
+            return;
+          }
+
+          try {
+            const dataUrl = event.data.dataUrl;
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            resolve(blob);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            reject(new Error(`快照数据流转换失败: ${msg}`));
+          }
+        };
+
+        window.addEventListener('message', handleResponse);
+
+        contentWindow.postMessage(
+          {
+            type: 'CURIO_CAPTURE_REQUEST',
+            requestId: requestId,
+          },
+          '*',
+        );
+      });
+    });
 ~~~~~
 
-#### Acts 2: 规范化 `DarkroomModal.tsx` 弹窗标签与遮罩交互
+#### Acts 2: 清除 `fs-storage.ts` 中的冗余类型声明并采用原生类型
 
-使用 `<dialog open>` 替代 `<div role="dialog">`，优化遮罩点击检测并移除内层容器多余的 `onClick`。
+移除冲突的 `CustomFileHandle` 和 `WritableFileStream` 声明，直接使用内置 DOM 提供的句柄能力。
 
 ~~~~~act
 patch_file
-src/layer3_gallery/components/DarkroomModal.tsx
+src/layer2_darkroom/storage/fs-storage.ts
 ~~~~~
-~~~~~tsx.old
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8"
-      onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-    >
-      <div
-        className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex flex-col bg-background border-r border-border h-full overflow-hidden">
+~~~~~ts.old
+const GALLERY_DIR = '.gallery';
+const POSTERS_DIR = 'posters';
+const NEGATIVES_DIR = 'negatives';
+const META_FILE = 'meta.json';
+
+interface WritableFileStream {
+  write(data: unknown): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface CustomFileHandle extends FileSystemFileHandle {
+  createWritable(): Promise<WritableFileStream>;
+}
+
+export class GalleryStorage {
 ~~~~~
-~~~~~tsx.new
-  return (
-    <dialog
-      open
-      aria-modal="true"
-      className="fixed inset-0 m-0 p-4 md:p-8 w-full h-full max-w-none max-h-none bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center border-0 outline-none text-main"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-    >
-      <div
-        className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden"
-      >
-        <div className="flex flex-col bg-background border-r border-border h-full overflow-hidden">
+~~~~~ts.new
+const GALLERY_DIR = '.gallery';
+const POSTERS_DIR = 'posters';
+const NEGATIVES_DIR = 'negatives';
+const META_FILE = 'meta.json';
+
+export class GalleryStorage {
 ~~~~~
 
 ~~~~~act
 patch_file
-src/layer3_gallery/components/DarkroomModal.tsx
+src/layer2_darkroom/storage/fs-storage.ts
 ~~~~~
-~~~~~tsx.old
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+~~~~~ts.old
+  public async saveArtifactSource(
+    filename: string,
+    newContent: string,
+    revision: number,
+  ): Promise<void> {
+    if (!this.dirHandle) return;
+
+    const fileHandle = (await this.dirHandle.getFileHandle(filename, {
+      create: true,
+    })) as CustomFileHandle;
+    const writable = await fileHandle.createWritable();
+    await writable.write(newContent);
+    await writable.close();
+
+    await this.recordNegativeRevision(filename, revision, newContent);
+  }
+
+  public async savePoster(filename: string, blob: Blob): Promise<string> {
+    if (!this.dirHandle) {
+      return URL.createObjectURL(blob);
+    }
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
+    const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
+    const posterHandle = (await postersDir.getFileHandle(posterFilename, {
+      create: true,
+    })) as CustomFileHandle;
+
+    const writable = await posterHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+
+    return URL.createObjectURL(blob);
+  }
+
+  public async saveMeta(meta: ArtifactMeta): Promise<void> {
+    if (!this.dirHandle) return;
+    const allMeta = await this.readAllMeta();
+    allMeta[meta.filename] = meta;
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const metaHandle = (await galleryDir.getFileHandle(META_FILE, {
+      create: true,
+    })) as CustomFileHandle;
+    const writable = await metaHandle.createWritable();
+    await writable.write(JSON.stringify(allMeta, null, 2));
+    await writable.close();
+  }
+
+  public async recordNegativeRevision(
+    filename: string,
+    revision: number,
+    content: string,
+  ): Promise<void> {
+    if (!this.dirHandle) return;
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR, { create: true });
+    const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''), {
+      create: true,
+    });
+
+    const revHandle = (await baseDir.getFileHandle(
+      `rev-${String(revision).padStart(4, '0')}.snapshot`,
+      { create: true },
+    )) as CustomFileHandle;
+    const writable = await revHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
 ~~~~~
-~~~~~tsx.new
-          </div>
-        </div>
-      </div>
-    </dialog>
-  );
-};
+~~~~~ts.new
+  public async saveArtifactSource(
+    filename: string,
+    newContent: string,
+    revision: number,
+  ): Promise<void> {
+    if (!this.dirHandle) return;
+
+    const fileHandle = await this.dirHandle.getFileHandle(filename, {
+      create: true,
+    });
+    const writable = await fileHandle.createWritable();
+    await writable.write(newContent);
+    await writable.close();
+
+    await this.recordNegativeRevision(filename, revision, newContent);
+  }
+
+  public async savePoster(filename: string, blob: Blob): Promise<string> {
+    if (!this.dirHandle) {
+      return URL.createObjectURL(blob);
+    }
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
+    const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
+    const posterHandle = await postersDir.getFileHandle(posterFilename, {
+      create: true,
+    });
+
+    const writable = await posterHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+
+    return URL.createObjectURL(blob);
+  }
+
+  public async saveMeta(meta: ArtifactMeta): Promise<void> {
+    if (!this.dirHandle) return;
+    const allMeta = await this.readAllMeta();
+    allMeta[meta.filename] = meta;
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const metaHandle = await galleryDir.getFileHandle(META_FILE, {
+      create: true,
+    });
+    const writable = await metaHandle.createWritable();
+    await writable.write(JSON.stringify(allMeta, null, 2));
+    await writable.close();
+  }
+
+  public async recordNegativeRevision(
+    filename: string,
+    revision: number,
+    content: string,
+  ): Promise<void> {
+    if (!this.dirHandle) return;
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR, { create: true });
+    const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''), {
+      create: true,
+    });
+
+    const revHandle = await baseDir.getFileHandle(
+      `rev-${String(revision).padStart(4, '0')}.snapshot`,
+      { create: true },
+    );
+    const writable = await revHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
 ~~~~~
 
 ### 下一步建议
 
-1. **执行校验**：计划执行后，在终端再次运行 `pnpm run checkf`，确认 Biome 与 TypeScript 检查均 0 报错通过。
-2. **交互体验回归**：在浏览器中打开页面，测试以下交互：
-   - 使用键盘 `Tab` 键聚焦画廊中的工件卡片，按 `Enter` 或 `Space` 验证是否能顺畅打开暗房弹窗。
-   - 打开暗房后，点击内容区外部暗色背景或按下 `Escape` 键，验证是否能正常关闭弹窗，点击内部操作区时不会被误关闭。
+1. **执行编译验证**：在终端重新执行 `pnpm run checkf`，确认 Biome 与 TypeScript (`tsc --noEmit`) 能够零警告零错误通过。
+2. **构建验证**：运行 `pnpm run build`，确保 Vite 打包阶段无隐式类型导出与构建问题。

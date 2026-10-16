@@ -1,7 +1,7 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
-import { DarkroomModal } from '@/layer3_gallery/components/DarkroomModal';
+import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { Header } from '@/layer3_gallery/components/Header';
 import type { Artifact } from '@/types';
@@ -14,10 +14,10 @@ interface WindowWithFSA extends Window {
 export function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏展演中的工件（默认点击打开时直接进入）
-  const [fullscreenArtifact, setFullscreenArtifact] = useState<Artifact | null>(null);
-  // 暗房编辑器中的工件
-  const [darkroomArtifact, setDarkroomArtifact] = useState<Artifact | null>(null);
+  // 网页全屏放映中的工件
+  const [stageArtifact, setStageArtifact] = useState<Artifact | null>(null);
+  // 独立暗房工作台中的工件
+  const [studioArtifact, setStudioArtifact] = useState<Artifact | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -43,7 +43,6 @@ export function App() {
         setPendingHandle(null);
         await loadArtifacts();
       } else if (result.handle) {
-        // 保存句柄待用户手势授权
         setPendingHandle(result.handle);
         await loadArtifacts();
       } else {
@@ -105,11 +104,11 @@ export function App() {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
     );
-    if (fullscreenArtifact?.meta.filename === updated.meta.filename) {
-      setFullscreenArtifact(updated);
+    if (stageArtifact?.meta.filename === updated.meta.filename) {
+      setStageArtifact(updated);
     }
-    if (darkroomArtifact?.meta.filename === updated.meta.filename) {
-      setDarkroomArtifact(updated);
+    if (studioArtifact?.meta.filename === updated.meta.filename) {
+      setStudioArtifact(updated);
     }
   };
 
@@ -146,7 +145,8 @@ export function App() {
               <ArtifactCard
                 key={artifact.meta.filename}
                 artifact={artifact}
-                onOpenDarkroom={setFullscreenArtifact}
+                onOpenStage={(art) => setStageArtifact(art)}
+                onOpenStudio={(art) => setStudioArtifact(art)}
               />
             ))}
           </div>
@@ -158,20 +158,31 @@ export function App() {
         )}
       </main>
 
-      {/* 默认全屏活体展演舞台 */}
-      <FullscreenStage
-        artifact={fullscreenArtifact}
-        onClose={() => setFullscreenArtifact(null)}
-        onOpenDarkroom={(art) => setDarkroomArtifact(art)}
-        onUpdateArtifact={handleUpdateArtifact}
-      />
+      {/* 活体全屏放映舞台 (显式条件挂载) */}
+      {stageArtifact && (
+        <FullscreenStage
+          artifact={stageArtifact}
+          onClose={() => setStageArtifact(null)}
+          onOpenDarkroom={(art) => {
+            setStageArtifact(null);
+            setStudioArtifact(art);
+          }}
+          onUpdateArtifact={handleUpdateArtifact}
+        />
+      )}
 
-      {/* 镜像暗房差量调整模态窗 */}
-      <DarkroomModal
-        artifact={darkroomArtifact}
-        onClose={() => setDarkroomArtifact(null)}
-        onUpdateArtifact={handleUpdateArtifact}
-      />
+      {/* 独立全屏暗房工作台 (显式条件挂载) */}
+      {studioArtifact && (
+        <DarkroomStudio
+          artifact={studioArtifact}
+          onBackToGallery={() => setStudioArtifact(null)}
+          onOpenStage={(art) => {
+            setStudioArtifact(null);
+            setStageArtifact(art);
+          }}
+          onUpdateArtifact={handleUpdateArtifact}
+        />
+      )}
     </div>
   );
 }

@@ -1,15 +1,15 @@
 import type { Tag } from '@/types';
 
-export class TagQueryEngine {
-  public static parseTag(rawTag: string): Tag {
+export const TagQueryEngine = {
+  parseTag(rawTag: string): Tag {
     const parts = rawTag.trim().toLowerCase().split(':');
     if (parts.length > 1) {
       return { raw: rawTag, namespace: parts[0], value: parts.slice(1).join(':') };
     }
     return { raw: rawTag, value: parts[0] };
-  }
+  },
 
-  public static match(artifactTags: string[], queryString: string): boolean {
+  match(artifactTags: string[], queryString: string): boolean {
     const tokens = queryString.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return true;
 
@@ -24,5 +24,5 @@ export class TagQueryEngine {
       }
     }
     return true;
-  }
-}
+  },
+};

@@ -10,8 +10,16 @@ interface ArtifactCardProps {
 export const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact, onOpenDarkroom }) => {
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpenDarkroom(artifact)}
-      className="bg-surface border border-border rounded overflow-hidden cursor-pointer hover:border-muted hover:-translate-y-0.5 transition-all flex flex-col group"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenDarkroom(artifact);
+        }
+      }}
+      className="bg-surface border border-border rounded overflow-hidden cursor-pointer hover:border-muted hover:-translate-y-0.5 transition-all flex flex-col group focus:outline-none focus:ring-1 focus:ring-muted"
     >
       <div className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center">
         <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted z-10 rounded">

@@ -1,9 +1,18 @@
-import type { Artifact, ArtifactMeta, NegativeRevision } from '@/types';
+import type { Artifact, ArtifactMeta } from '@/types';
 
 const GALLERY_DIR = '.gallery';
 const POSTERS_DIR = 'posters';
 const NEGATIVES_DIR = 'negatives';
 const META_FILE = 'meta.json';
+
+interface WritableFileStream {
+  write(data: unknown): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface CustomFileHandle extends FileSystemFileHandle {
+  createWritable(): Promise<WritableFileStream>;
+}
 
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
@@ -24,7 +33,8 @@ export class GalleryStorage {
     const artifacts: Artifact[] = [];
     const metaMap = await this.readAllMeta();
 
-    for await (const entry of (this.dirHandle as any).values()) {
+    const entries = (this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values();
+    for await (const entry of entries) {
       if (entry.kind === 'file' && entry.name.endsWith('.html')) {
         const file = await (entry as FileSystemFileHandle).getFile();
         const text = await file.text();
@@ -57,8 +67,8 @@ export class GalleryStorage {
   ): Promise<void> {
     if (!this.dirHandle) return;
 
-    const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
-    const writable = await (fileHandle as any).createWritable();
+    const fileHandle = (await this.dirHandle.getFileHandle(filename, { create: true })) as CustomFileHandle;
+    const writable = await fileHandle.createWritable();
     await writable.write(newContent);
     await writable.close();
 
@@ -73,9 +83,9 @@ export class GalleryStorage {
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
     const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
     const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-    const posterHandle = await postersDir.getFileHandle(posterFilename, { create: true });
+    const posterHandle = (await postersDir.getFileHandle(posterFilename, { create: true })) as CustomFileHandle;
 
-    const writable = await (posterHandle as any).createWritable();
+    const writable = await posterHandle.createWritable();
     await writable.write(blob);
     await writable.close();
 
@@ -88,8 +98,8 @@ export class GalleryStorage {
     allMeta[meta.filename] = meta;
 
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
-    const writable = await (metaHandle as any).createWritable();
+    const metaHandle = (await galleryDir.getFileHandle(META_FILE, { create: true })) as CustomFileHandle;
+    const writable = await metaHandle.createWritable();
     await writable.write(JSON.stringify(allMeta, null, 2));
     await writable.close();
   }
@@ -106,10 +116,11 @@ export class GalleryStorage {
       create: true,
     });
 
-    const revHandle = await baseDir.getFileHandle(`rev-${String(revision).padStart(4, '0')}.snapshot`, {
-      create: true,
-    });
-    const writable = await (revHandle as any).createWritable();
+    const revHandle = (await baseDir.getFileHandle(
+      `rev-${String(revision).padStart(4, '0')}.snapshot`,
+      { create: true }
+    )) as CustomFileHandle;
+    const writable = await revHandle.createWritable();
     await writable.write(content);
     await writable.close();
   }

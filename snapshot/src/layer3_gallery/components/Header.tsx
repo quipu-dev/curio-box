@@ -22,7 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-10 bg-surface border-b border-border px-6 py-4 flex flex-wrap gap-4 justify-between items-center">
       <div className="flex items-center gap-3">
         <div className="font-bold text-lg tracking-tight">
-          curio-box <span className="text-muted font-normal text-sm font-mono">// 视觉工件画廊</span>
+          curio-box{' '}
+          <span className="text-muted font-normal text-sm font-mono">{'// 视觉工件画廊'}</span>
         </div>
       </div>
 

@@ -4,7 +4,11 @@ import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
 import { DarkroomModal } from '@/layer3_gallery/components/DarkroomModal';
 import { Header } from '@/layer3_gallery/components/Header';
 import type { Artifact } from '@/types';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+interface WindowWithFSA extends Window {
+  showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+}
 
 export function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -17,27 +21,29 @@ export function App() {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
-  const loadArtifacts = async () => {
+  const loadArtifacts = useCallback(async () => {
     const list = await galleryStorage.scanArtifacts();
     setArtifacts(list);
-  };
+  }, []);
 
   useEffect(() => {
     loadArtifacts();
-  }, []);
+  }, [loadArtifacts]);
 
   const handlePickDirectory = async () => {
     try {
-      if ('showDirectoryPicker' in window) {
-        const handle = await (window as any).showDirectoryPicker();
+      const fsaWindow = window as unknown as WindowWithFSA;
+      if (typeof fsaWindow.showDirectoryPicker === 'function') {
+        const handle = await fsaWindow.showDirectoryPicker();
         galleryStorage.setDirectoryHandle(handle);
         setHasDirectory(true);
         await loadArtifacts();
       } else {
         alert('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge 等现代浏览器。');
       }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
+    } catch (err: unknown) {
+      const e = err as Error;
+      if (e.name !== 'AbortError') {
         console.error('选择目录失败:', err);
       }
     }

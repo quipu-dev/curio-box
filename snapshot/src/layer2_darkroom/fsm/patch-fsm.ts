@@ -140,8 +140,8 @@ export class DarkroomPatchFSM {
   }
 }
 
-export class DarkroomApplier {
-  public static apply(sourceCode: string, command: PatchCommand): string {
+export const DarkroomApplier = {
+  apply(sourceCode: string, command: PatchCommand): string {
     if (command.action === 'write_file') {
       return command.newDoc;
     }
@@ -159,5 +159,5 @@ export class DarkroomApplier {
     }
 
     return sourceCode;
-  }
-}
+  },
+};

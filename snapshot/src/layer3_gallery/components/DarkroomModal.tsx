@@ -40,8 +40,9 @@ export const DarkroomModal: React.FC<DarkroomModalProps> = ({
       };
       onUpdateArtifact(updated);
       setStatusMessage('定格封印成功！快照已持久化。');
-    } catch (err: any) {
-      setStatusMessage(`定格失败: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMessage(`定格失败: ${msg}`);
     }
   };
 
@@ -106,8 +107,9 @@ ${artifact.sourceCode}
       onUpdateArtifact(updated);
       setPatchInput('');
       setStatusMessage(`差量补丁已应用！已跃迁至版本 REV:${nextRev}`);
-    } catch (err: any) {
-      setStatusMessage(`应用失败: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMessage(`应用失败: ${msg}`);
     }
   };
 
@@ -156,14 +158,18 @@ ctx.fillStyle = '#001a33';
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
     >
       <div
         className="bg-surface border border-border w-full max-w-7xl h-[92vh] grid grid-cols-1 md:grid-cols-[1fr_420px] rounded-lg shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Layer 1: 视口展演区 */}
         <div className="flex flex-col bg-background border-r border-border h-full overflow-hidden">
           <div className="p-3 bg-surface border-b border-border flex justify-between items-center text-xs font-mono">
             <span className="text-muted">【Layer 1】沙箱隔离硬视口 (IFrame Sandbox)</span>
@@ -214,7 +220,6 @@ ctx.fillStyle = '#001a33';
           </div>
         </div>
 
-        {/* Layer 2: 镜像暗房与差量更新区 */}
         <div className="flex flex-col bg-surface h-full overflow-hidden">
           <div className="p-3 border-b border-border flex justify-between items-center">
             <span className="font-semibold text-xs tracking-wide">镜像暗房 (Negative Chain)</span>

@@ -6,6 +6,8 @@ interface HeaderProps {
   onSearchChange: (q: string) => void;
   onPickDirectory: () => void;
   hasDirectory: boolean;
+  pendingDirectoryName?: string;
+  onRequestPendingPermission?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
 }
@@ -15,6 +17,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchChange,
   onPickDirectory,
   hasDirectory,
+  pendingDirectoryName,
+  onRequestPendingPermission,
   theme,
   onToggleTheme,
 }) => {
@@ -40,6 +44,19 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
+        {/* 如果有上次挂载且待重新授权的目录，提供一键重新连接按钮 */}
+        {pendingDirectoryName && !hasDirectory && onRequestPendingPermission && (
+          <button
+            type="button"
+            onClick={onRequestPendingPermission}
+            className="flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/40 text-sky-400 px-3 py-1.5 text-xs font-mono hover:bg-sky-500/20 transition-colors rounded animate-pulse"
+            title="点击恢复上次挂载目录的读取授权"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>恢复关联目录: {pendingDirectoryName}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onPickDirectory}

@@ -33,7 +33,9 @@ export class GalleryStorage {
     const artifacts: Artifact[] = [];
     const metaMap = await this.readAllMeta();
 
-    const entries = (this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values();
+    const entries = (
+      this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+    ).values();
     for await (const entry of entries) {
       if (entry.kind === 'file' && entry.name.endsWith('.html')) {
         const file = await (entry as FileSystemFileHandle).getFile();
@@ -63,11 +65,13 @@ export class GalleryStorage {
   public async saveArtifactSource(
     filename: string,
     newContent: string,
-    revision: number
+    revision: number,
   ): Promise<void> {
     if (!this.dirHandle) return;
 
-    const fileHandle = (await this.dirHandle.getFileHandle(filename, { create: true })) as CustomFileHandle;
+    const fileHandle = (await this.dirHandle.getFileHandle(filename, {
+      create: true,
+    })) as CustomFileHandle;
     const writable = await fileHandle.createWritable();
     await writable.write(newContent);
     await writable.close();
@@ -83,7 +87,9 @@ export class GalleryStorage {
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
     const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
     const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-    const posterHandle = (await postersDir.getFileHandle(posterFilename, { create: true })) as CustomFileHandle;
+    const posterHandle = (await postersDir.getFileHandle(posterFilename, {
+      create: true,
+    })) as CustomFileHandle;
 
     const writable = await posterHandle.createWritable();
     await writable.write(blob);
@@ -98,7 +104,9 @@ export class GalleryStorage {
     allMeta[meta.filename] = meta;
 
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = (await galleryDir.getFileHandle(META_FILE, { create: true })) as CustomFileHandle;
+    const metaHandle = (await galleryDir.getFileHandle(META_FILE, {
+      create: true,
+    })) as CustomFileHandle;
     const writable = await metaHandle.createWritable();
     await writable.write(JSON.stringify(allMeta, null, 2));
     await writable.close();
@@ -107,7 +115,7 @@ export class GalleryStorage {
   public async recordNegativeRevision(
     filename: string,
     revision: number,
-    content: string
+    content: string,
   ): Promise<void> {
     if (!this.dirHandle) return;
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
@@ -118,23 +126,22 @@ export class GalleryStorage {
 
     const revHandle = (await baseDir.getFileHandle(
       `rev-${String(revision).padStart(4, '0')}.snapshot`,
-      { create: true }
+      { create: true },
     )) as CustomFileHandle;
     const writable = await revHandle.createWritable();
     await writable.write(content);
     await writable.close();
   }
 
-  public async loadNegativeRevision(
-    filename: string,
-    revision: number
-  ): Promise<string | null> {
+  public async loadNegativeRevision(filename: string, revision: number): Promise<string | null> {
     if (!this.dirHandle) return null;
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
       const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
       const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
-      const revHandle = await baseDir.getFileHandle(`rev-${String(revision).padStart(4, '0')}.snapshot`);
+      const revHandle = await baseDir.getFileHandle(
+        `rev-${String(revision).padStart(4, '0')}.snapshot`,
+      );
       const file = await revHandle.getFile();
       return await file.text();
     } catch {

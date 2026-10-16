@@ -234,12 +234,16 @@ ctx.fillStyle = '#001a33';
 
           <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-4 text-xs font-mono">
             <div className="bg-background border border-border p-3 rounded">
-              <div className="text-[10px] uppercase text-muted tracking-wider mb-1">工件实体标识</div>
+              <div className="text-[10px] uppercase text-muted tracking-wider mb-1">
+                工件实体标识
+              </div>
               <div className="font-sans font-bold text-sm text-main">{artifact.meta.name}</div>
               <div className="text-muted text-[11px] mt-1 space-y-0.5">
                 <div>文件：{artifact.meta.filename}</div>
                 <div>ID：{artifact.meta.id}</div>
-                <div className="text-main font-semibold">底片链版本：REV:{artifact.meta.currentRevision}</div>
+                <div className="text-main font-semibold">
+                  底片链版本：REV:{artifact.meta.currentRevision}
+                </div>
               </div>
             </div>
 
@@ -249,7 +253,11 @@ ctx.fillStyle = '#001a33';
                 onClick={handleCopyPromptContext}
                 className="flex-1 flex items-center justify-center gap-1.5 border border-border py-1.5 rounded hover:bg-background transition-colors text-xs"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-muted" />}
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-green-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 text-muted" />
+                )}
                 <span>{copied ? '已复制上下文！' : '复制 AI 提示词上下文'}</span>
               </button>
             </div>

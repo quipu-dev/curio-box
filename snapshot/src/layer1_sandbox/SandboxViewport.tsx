@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 
 interface SandboxViewportProps {
   htmlPayload: string;
@@ -134,7 +135,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
             type: 'CURIO_CAPTURE_REQUEST',
             requestId: requestId,
           },
-          '*'
+          '*',
         );
       });
     });

@@ -55,7 +55,7 @@ export function App() {
 
   const handleUpdateArtifact = (updated: Artifact) => {
     setArtifacts((prev) =>
-      prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item))
+      prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
     );
     setSelectedArtifact(updated);
   };
@@ -78,7 +78,9 @@ export function App() {
       <main className="flex-1 p-6 md:p-8">
         <div className="mb-6 flex justify-between items-center text-xs font-mono text-muted">
           <div>
-            陈列展品总数：<span className="text-main font-semibold">{filteredArtifacts.length}</span> / {artifacts.length}
+            陈列展品总数：
+            <span className="text-main font-semibold">{filteredArtifacts.length}</span> /{' '}
+            {artifacts.length}
           </div>
           {!hasDirectory && <div>（当前处于内置演示库模式，可点击右上角载入本地工件目录）</div>}
         </div>

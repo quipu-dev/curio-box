@@ -1,8 +1,10 @@
+import { ToastProvider, useToast } from '@/context/ToastContext';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
 import { ArtifactComposerModal } from '@/layer3_gallery/components/ArtifactComposerModal';
+import { ArtifactInspectorModal } from '@/layer3_gallery/components/ArtifactInspectorModal';
 import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { Header } from '@/layer3_gallery/components/Header';
@@ -14,13 +16,16 @@ interface WindowWithFSA extends Window {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 }
 
-export function App() {
+function MainApp() {
+  const { toast } = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   // 网页全屏放映中的工件
   const [stageArtifact, setStageArtifact] = useState<Artifact | null>(null);
   // 独立暗房工作台中的工件
   const [studioArtifact, setStudioArtifact] = useState<Artifact | null>(null);
+  // 标本档案检视中的工件
+  const [inspectingArtifact, setInspectingArtifact] = useState<Artifact | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -93,13 +98,14 @@ export function App() {
         galleryStorage.setDirectoryHandle(handle);
         setHasDirectory(true);
         await loadArtifacts();
+        toast.success(`成功关联目录: ${handle.name}`);
       } else {
-        alert('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge 等现代浏览器。');
+        toast.warn('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge。');
       }
     } catch (err: unknown) {
       const e = err as Error;
       if (e.name !== 'AbortError') {
-        console.error('选择目录失败:', err);
+        toast.error('选择目录失败');
       }
     }
   };
@@ -118,14 +124,14 @@ export function App() {
     try {
       const text = await navigator.clipboard.readText();
       if (!text.trim()) {
-        alert('剪贴板为空，请先复制 HTML 或脚本代码！');
+        toast.warn('剪贴板为空，请先复制 HTML 或脚本代码');
         return;
       }
       const wrapped = TitleSanitizerEngine.wrapAsCompleteHtml(text);
       setComposerInitialCode(wrapped);
+      toast.info('已从剪贴板载入代码草稿');
     } catch {
-      // 浏览器权限受阻时，给一份默认空白模板并引导粘贴
-      alert('无法直接读取剪贴板，已为您打开编辑器，请在代码区按 Ctrl+V 粘贴。');
+      toast.warn('无法直接读取剪贴板，已为您开启空白编辑器，请在代码区粘贴');
       setComposerInitialCode(TitleSanitizerEngine.wrapAsCompleteHtml('', '新建工件'));
     }
   };
@@ -173,12 +179,13 @@ export function App() {
 
       const file = e.dataTransfer.files[0];
       if (!file.name.endsWith('.html') && !file.type.includes('html')) {
-        alert('请拖入 .html 格式的工件文件');
+        toast.warn('请拖入 .html 格式的工件文件');
         return;
       }
 
       const text = await file.text();
       setComposerInitialCode(text);
+      toast.info(`已载入文件: ${file.name}`);
     };
 
     window.addEventListener('dragover', handleDragOver);
@@ -190,7 +197,7 @@ export function App() {
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('drop', handleDrop);
     };
-  }, []);
+  }, [toast]);
 
   // 保存新建工件并落盘
   const handleSaveComposerArtifact = async (data: {
@@ -221,6 +228,60 @@ export function App() {
     }
     if (studioArtifact?.meta.filename === updated.meta.filename) {
       setStudioArtifact(updated);
+    }
+    if (inspectingArtifact?.meta.filename === updated.meta.filename) {
+      setInspectingArtifact(updated);
+    }
+  };
+
+  // 标本元数据修改联动
+  const handleUpdateTags = async (filename: string, newTags: string[]) => {
+    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, { tags: newTags });
+    setArtifacts((prev) =>
+      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+    );
+    if (inspectingArtifact?.meta.filename === filename) {
+      setInspectingArtifact((prev) => (prev ? { ...prev, meta: updatedMeta } : null));
+    }
+  };
+
+  const handleUpdateRating = async (filename: string, newRating: number) => {
+    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, { rating: newRating });
+    setArtifacts((prev) =>
+      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+    );
+    if (inspectingArtifact?.meta.filename === filename) {
+      setInspectingArtifact((prev) => (prev ? { ...prev, meta: updatedMeta } : null));
+    }
+  };
+
+  // 标本重命名
+  const handleRenameArtifact = async (
+    oldFilename: string,
+    newFilename: string,
+    newName: string,
+  ) => {
+    const newArt = await galleryStorage.renameArtifact(oldFilename, newFilename, newName);
+    setArtifacts((prev) =>
+      prev.map((item) => (item.meta.filename === oldFilename ? newArt : item)),
+    );
+    if (inspectingArtifact?.meta.filename === oldFilename) {
+      setInspectingArtifact(newArt);
+    }
+    if (stageArtifact?.meta.filename === oldFilename) {
+      setStageArtifact(newArt);
+    }
+    if (studioArtifact?.meta.filename === oldFilename) {
+      setStudioArtifact(newArt);
+    }
+  };
+
+  // 标本删除
+  const handleDeleteArtifact = async (filename: string) => {
+    await galleryStorage.deleteArtifact(filename);
+    setArtifacts((prev) => prev.filter((item) => item.meta.filename !== filename));
+    if (inspectingArtifact?.meta.filename === filename) {
+      setInspectingArtifact(null);
     }
   };
 
@@ -261,6 +322,7 @@ export function App() {
                 artifact={artifact}
                 onOpenStage={(art) => setStageArtifact(art)}
                 onOpenStudio={(art) => setStudioArtifact(art)}
+                onOpenInspector={(art) => setInspectingArtifact(art)}
               />
             ))}
           </div>
@@ -298,6 +360,21 @@ export function App() {
         />
       )}
 
+      {/* 标本档案与元数据检视模态框 */}
+      {inspectingArtifact && (
+        <ArtifactInspectorModal
+          artifact={inspectingArtifact}
+          onClose={() => setInspectingArtifact(null)}
+          onOpenStage={(art) => setStageArtifact(art)}
+          onOpenStudio={(art) => setStudioArtifact(art)}
+          onUpdateTags={handleUpdateTags}
+          onUpdateRating={handleUpdateRating}
+          onRename={handleRenameArtifact}
+          onDelete={handleDeleteArtifact}
+          existingFilenames={existingFilenames}
+        />
+      )}
+
       {/* 工件装配台模态框 */}
       {composerInitialCode !== null && (
         <ArtifactComposerModal
@@ -319,6 +396,14 @@ export function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <ToastProvider>
+      <MainApp />
+    </ToastProvider>
   );
 }
 

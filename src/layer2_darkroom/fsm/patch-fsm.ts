@@ -12,6 +12,8 @@ enum FSMState {
   IN_OLD_DOC = 3,
   SEEKING_NEW_DOC = 4,
   IN_NEW_DOC = 5,
+  SEEKING_TAG = 6,
+  IN_TAG = 7,
 }
 
 export class DarkroomPatchFSM {
@@ -56,10 +58,39 @@ export class DarkroomPatchFSM {
 
       case FSMState.IN_ACT: {
         if (this.isMatchingClosingFence(line)) {
-          this.state = FSMState.SEEKING_OLD_DOC;
+          const act = this.bufferAction.trim();
+          if (act === 'add_tag' || act === 'remove_tag') {
+            this.state = FSMState.SEEKING_TAG;
+          } else {
+            this.state = FSMState.SEEKING_OLD_DOC;
+          }
           this.currentFence = null;
         } else {
           this.bufferAction += line.trim();
+        }
+        break;
+      }
+
+      case FSMState.SEEKING_TAG: {
+        const match = line.match(this.fenceOpenRegex);
+        if (
+          match &&
+          (match[2].trim() === 'tag' || match[2].trim() === 'tags' || match[2].trim() === 'text')
+        ) {
+          this.currentFence = this.extractFence(match[1]);
+          this.state = FSMState.IN_TAG;
+          this.bufferNewDoc = [];
+        }
+        break;
+      }
+
+      case FSMState.IN_TAG: {
+        if (this.isMatchingClosingFence(line)) {
+          this.emitCommand();
+          this.state = FSMState.SEEKING_ACT;
+          this.currentFence = null;
+        } else {
+          this.bufferNewDoc.push(line);
         }
         break;
       }
@@ -128,7 +159,28 @@ export class DarkroomPatchFSM {
 
   private emitCommand(): void {
     const rawAction = this.bufferAction.trim();
-    if (rawAction !== 'patch_file' && rawAction !== 'write_file') {
+    if (
+      rawAction !== 'patch_file' &&
+      rawAction !== 'write_file' &&
+      rawAction !== 'add_tag' &&
+      rawAction !== 'remove_tag'
+    ) {
+      return;
+    }
+
+    if (rawAction === 'add_tag' || rawAction === 'remove_tag') {
+      const parsedTags = this.bufferNewDoc
+        .join(' ')
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      this.commands.push({
+        action: rawAction as PatchAction,
+        oldDoc: '',
+        newDoc: this.bufferNewDoc.join('\n'),
+        tags: parsedTags,
+      });
       return;
     }
 
@@ -159,5 +211,24 @@ export const DarkroomApplier = {
     }
 
     return sourceCode;
+  },
+
+  applyTags(currentTags: string[], command: PatchCommand): string[] {
+    if (!command.tags || command.tags.length === 0) return currentTags;
+
+    if (command.action === 'add_tag') {
+      const set = new Set(currentTags);
+      for (const t of command.tags) {
+        set.add(t);
+      }
+      return Array.from(set);
+    }
+
+    if (command.action === 'remove_tag') {
+      const removeSet = new Set(command.tags.map((t) => t.toLowerCase()));
+      return currentTags.filter((t) => !removeSet.has(t.toLowerCase()));
+    }
+
+    return currentTags;
   },
 };

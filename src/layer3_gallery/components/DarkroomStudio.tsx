@@ -1,3 +1,4 @@
+import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
@@ -53,9 +54,9 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [isActivated, setIsActivated] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<TabType>('patch');
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(true);
+  const { toast } = useToast();
   const [aspectRatio, setAspectRatio] = useState<'fill' | '16/9' | '4/3'>('fill');
   const [patchInput, setPatchInput] = useState<string>('');
-  const [statusMessage, setStatusMessage] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [assetStats, setAssetStats] = useState<AssetCacheStats | null>(null);
   const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
@@ -100,34 +101,33 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const handleCheckoutRevision = async (targetRev: number) => {
     if (targetRev === artifact.meta.currentRevision) {
       setViewingSnapshot(null);
-      setStatusMessage(`已退出历史预览，恢复至最新版本 (REV:${targetRev})`);
+      toast.info(`已退出历史预览，恢复至最新版本 (REV:${targetRev})`);
       return;
     }
 
     const content = await galleryStorage.loadNegativeRevision(artifact.meta.filename, targetRev);
     if (!content) {
-      setStatusMessage(`未能载入 REV:${targetRev} 的快照内容`);
+      toast.error(`未能载入 REV:${targetRev} 的快照内容`);
       return;
     }
 
     setViewingSnapshot({ revision: targetRev, content });
-    setStatusMessage(`正在只读预览 REV:${targetRev} 快照（未修改本地文件）`);
+    toast.info(`正在只读预览 REV:${targetRev} 快照`);
   };
 
   // 退出检视态，切回物理主版本
   const handleExitCheckout = () => {
     setViewingSnapshot(null);
-    setStatusMessage(`已退出版本检视，恢复至最新版本 (REV:${artifact.meta.currentRevision})`);
+    toast.info(`已退出版本检视，恢复至最新版本 (REV:${artifact.meta.currentRevision})`);
   };
 
   // 截屏定格快照
   const handleCapturePoster = async () => {
     if (!captureHandleRef.current) {
-      setStatusMessage('请等待沙箱加载完毕后再截图');
+      toast.warn('请等待沙箱加载完毕后再截图');
       return;
     }
     try {
-      setStatusMessage('正在截取封面图...');
       const blob = await captureHandleRef.current();
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
@@ -135,10 +135,10 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
         posterBlobUrl: newUrl,
       };
       onUpdateArtifact(updated);
-      setStatusMessage('封面更新成功！');
+      toast.success('封面截取并更新成功！');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatusMessage(`截图失败: ${msg}`);
+      toast.error(`截图失败: ${msg}`);
     }
   };
 
@@ -156,6 +156,14 @@ patch_file
 <替换后的新代码行>
 \`\`\`
 
+如需为工件补充或调整标签，可附带 add_tag 指令：
+\`\`\`act
+add_tag
+\`\`\`
+\`\`\`tag
+领域:图形学 物理:粒子系统
+\`\`\`
+
 当前工件【${artifact.meta.name}】源码：
 \`\`\`html
 ${artifact.sourceCode}
@@ -163,18 +171,19 @@ ${artifact.sourceCode}
 
     navigator.clipboard.writeText(prompt);
     setCopied(true);
+    toast.success('已复制大模型提示词上下文！');
     setTimeout(() => setCopied(false), 2000);
   };
 
   // 应用 FSM 差量补丁
   const handleApplyPatch = async () => {
     if (!patchInput.trim()) {
-      setStatusMessage('请粘贴包含 act、old_doc、new_doc 的补丁文本');
+      toast.warn('请粘贴包含 act 指令的补丁文本');
       return;
     }
 
     if (viewingSnapshot) {
-      setStatusMessage('当前处于历史检视模式，请先【基于此版本修改】或【返回最新版本】');
+      toast.warn('当前处于历史检视模式，请先【基于此版本修改】或【返回最新版本】');
       return;
     }
 
@@ -190,21 +199,37 @@ ${artifact.sourceCode}
       }
 
       let nextCode = artifact.sourceCode;
+      let nextTags = [...artifact.meta.tags];
+      let hasCodeChange = false;
+      let hasTagChange = false;
+
       for (const cmd of commands) {
-        nextCode = DarkroomApplier.apply(nextCode, cmd);
+        if (cmd.action === 'patch_file' || cmd.action === 'write_file') {
+          nextCode = DarkroomApplier.apply(nextCode, cmd);
+          hasCodeChange = true;
+        } else if (cmd.action === 'add_tag' || cmd.action === 'remove_tag') {
+          nextTags = DarkroomApplier.applyTags(nextTags, cmd);
+          hasTagChange = true;
+        }
       }
 
-      const nextRev = artifact.meta.currentRevision + 1;
-      await galleryStorage.saveArtifactSource(
-        artifact.meta.filename,
-        nextCode,
-        nextRev,
-        'patch',
-        '应用差量补丁',
-      );
+      const nextRev = hasCodeChange
+        ? artifact.meta.currentRevision + 1
+        : artifact.meta.currentRevision;
+
+      if (hasCodeChange) {
+        await galleryStorage.saveArtifactSource(
+          artifact.meta.filename,
+          nextCode,
+          nextRev,
+          'patch',
+          '应用差量补丁',
+        );
+      }
 
       const updatedMeta = {
         ...artifact.meta,
+        tags: nextTags,
         currentRevision: nextRev,
         updatedAt: new Date().toISOString(),
       };
@@ -218,11 +243,15 @@ ${artifact.sourceCode}
 
       onUpdateArtifact(updated);
       setPatchInput('');
-      setStatusMessage(`补丁已成功应用！版本更新至 REV:${nextRev}`);
+      toast.success(
+        hasCodeChange
+          ? `补丁已应用！升级至 REV:${nextRev}${hasTagChange ? '，标签已同步' : ''}`
+          : '标签指令已成功更新',
+      );
       await refreshHistory();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatusMessage(`应用失败: ${msg}`);
+      toast.error(`应用失败: ${msg}`);
     }
   };
 
@@ -234,7 +263,7 @@ ${artifact.sourceCode}
     );
 
     if (!historicalContent) {
-      setStatusMessage(`未找到 REV:${targetRev} 的快照文件`);
+      toast.error(`未找到 REV:${targetRev} 的快照文件`);
       return;
     }
 
@@ -262,14 +291,14 @@ ${artifact.sourceCode}
 
     onUpdateArtifact(updated);
     setViewingSnapshot(null);
-    setStatusMessage(`已成功恢复 REV:${targetRev} 内容为新版本 REV:${nextRev}`);
+    toast.success(`已恢复 REV:${targetRev} 内容为新版本 REV:${nextRev}`);
     await refreshHistory();
   };
 
   // 手动一键预缓存外链资产
   const handleCacheAllAssets = async () => {
     if (!assetStats || assetStats.total === 0) return;
-    setStatusMessage('正在下载并缓存外部资源...');
+    toast.info('正在下载并缓存外部资源...');
     for (const asset of assetStats.assets) {
       await AssetCacheEngine.cacheAsset(asset.url);
     }
@@ -283,7 +312,7 @@ ${artifact.sourceCode}
         status: results[i] ? 'cached' : 'failed',
       })),
     });
-    setStatusMessage('外部资源已全部缓存至本地！');
+    toast.success('外部资源已全部缓存至本地！');
   };
 
   return (
@@ -769,13 +798,6 @@ patch_file
                       </button>
                     )}
                   </div>
-                </div>
-              )}
-
-              {statusMessage && (
-                <div className="p-2.5 bg-background border border-border rounded text-[11px] text-muted flex items-start gap-1.5 animate-in fade-in">
-                  <History className="w-3.5 h-3.5 text-muted mt-0.5 shrink-0" />
-                  <span className="text-main">{statusMessage}</span>
                 </div>
               )}
             </div>

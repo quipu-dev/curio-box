@@ -1,9 +1,10 @@
-export type PatchAction = 'patch_file' | 'write_file';
+export type PatchAction = 'patch_file' | 'write_file' | 'add_tag' | 'remove_tag';
 
 export interface PatchCommand {
   action: PatchAction;
   oldDoc: string;
   newDoc: string;
+  tags?: string[];
 }
 
 export interface Tag {
@@ -33,6 +34,7 @@ export interface ArtifactMeta {
   tags: string[];
   currentRevision: number;
   updatedAt: string;
+  rating?: number;
 }
 
 export interface Artifact {

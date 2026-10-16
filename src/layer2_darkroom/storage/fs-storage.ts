@@ -239,6 +239,211 @@ export class GalleryStorage {
     await writable.close();
   }
 
+  /**
+   * 局部更新工件元数据（如打标签、星级评分、工件别名等）
+   */
+  public async updateArtifactMeta(
+    filename: string,
+    partialMeta: Partial<ArtifactMeta>,
+  ): Promise<ArtifactMeta> {
+    const allMeta = await this.readAllMeta();
+    const existing = allMeta[filename] || {
+      id: `art_${Math.random().toString(16).slice(2, 10)}`,
+      name: filename.replace(/\.html$/, ''),
+      filename,
+      tags: ['形态:原生html'],
+      currentRevision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updated: ArtifactMeta = {
+      ...existing,
+      ...partialMeta,
+      updatedAt: new Date().toISOString(),
+    };
+
+    allMeta[filename] = updated;
+    if (this.dirHandle) {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
+      const writable = await metaHandle.createWritable();
+      await writable.write(JSON.stringify(allMeta, null, 2));
+      await writable.close();
+    }
+    return updated;
+  }
+
+  /**
+   * 重命名工件（支持重命名物理文件与底片快照链迁移）
+   */
+  public async renameArtifact(
+    oldFilename: string,
+    newFilename: string,
+    newName?: string,
+  ): Promise<Artifact> {
+    if (!this.dirHandle) {
+      throw new Error('演示模式下暂不支持文件重命名');
+    }
+
+    const oldBase = oldFilename.replace(/\.html$/, '');
+    const newBase = newFilename.replace(/\.html$/, '');
+
+    // 1. 读取原工件内容
+    const oldFileHandle = await this.dirHandle.getFileHandle(oldFilename);
+    const oldFile = await oldFileHandle.getFile();
+    const content = await oldFile.text();
+
+    // 2. 写入新文件并移除旧文件
+    const newFileHandle = await this.dirHandle.getFileHandle(newFilename, { create: true });
+    const newWritable = await newFileHandle.createWritable();
+    await newWritable.write(content);
+    await newWritable.close();
+
+    try {
+      await (
+        this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
+      ).removeEntry(oldFilename);
+    } catch (err) {
+      console.warn('移除旧文件失败:', err);
+    }
+
+    // 3. 迁移底片目录 (negatives)
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
+      try {
+        const oldNegDir = await negativesDir.getDirectoryHandle(oldBase);
+        const newNegDir = await negativesDir.getDirectoryHandle(newBase, { create: true });
+
+        const entries = (
+          oldNegDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+        ).values();
+        for await (const entry of entries) {
+          if (entry.kind === 'file') {
+            const fHandle = entry as FileSystemFileHandle;
+            const f = await fHandle.getFile();
+            const text = await f.text();
+            const destHandle = await newNegDir.getFileHandle(entry.name, { create: true });
+            const destWritable = await destHandle.createWritable();
+            await destWritable.write(text);
+            await destWritable.close();
+          }
+        }
+        await (
+          negativesDir as unknown as {
+            removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
+          }
+        ).removeEntry(oldBase, { recursive: true });
+      } catch {
+        // 原底片不存在时忽略
+      }
+
+      // 4. 迁移封面图 (posters)
+      try {
+        const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
+        const oldPosterHandle = await postersDir.getFileHandle(`${oldBase}.webp`);
+        const oldPosterFile = await oldPosterHandle.getFile();
+        const newPosterHandle = await postersDir.getFileHandle(`${newBase}.webp`, { create: true });
+        const pWritable = await newPosterHandle.createWritable();
+        await pWritable.write(await oldPosterFile.arrayBuffer());
+        await pWritable.close();
+        await (
+          postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
+        ).removeEntry(`${oldBase}.webp`);
+      } catch {
+        // 无封面时忽略
+      }
+    } catch (err) {
+      console.warn('迁移关联资源异常:', err);
+    }
+
+    // 5. 更新元数据索引
+    const allMeta = await this.readAllMeta();
+    const oldMeta = allMeta[oldFilename] || {
+      id: `art_${Math.random().toString(16).slice(2, 10)}`,
+      name: newName || newBase,
+      filename: oldFilename,
+      tags: ['形态:原生html'],
+      currentRevision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    delete allMeta[oldFilename];
+    const newMeta: ArtifactMeta = {
+      ...oldMeta,
+      filename: newFilename,
+      name: newName || oldMeta.name,
+      updatedAt: new Date().toISOString(),
+    };
+    allMeta[newFilename] = newMeta;
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
+    const mWritable = await metaHandle.createWritable();
+    await mWritable.write(JSON.stringify(allMeta, null, 2));
+    await mWritable.close();
+
+    const posterBlobUrl = await this.loadPosterBlobUrl(newFilename);
+
+    return {
+      meta: newMeta,
+      sourceCode: content,
+      posterBlobUrl,
+    };
+  }
+
+  /**
+   * 级联删除工件（删除 HTML 源码、封面、底片版本链与元数据）
+   */
+  public async deleteArtifact(filename: string): Promise<void> {
+    if (!this.dirHandle) {
+      throw new Error('演示模式下暂不支持物理删除');
+    }
+
+    const baseName = filename.replace(/\.html$/, '');
+
+    // 1. 删除根目录 HTML 文件
+    try {
+      await (
+        this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
+      ).removeEntry(filename);
+    } catch (err) {
+      console.warn('删除 HTML 源文件失败:', err);
+    }
+
+    // 2. 清理关联底片与封面
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+      try {
+        const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
+        await (
+          negativesDir as unknown as {
+            removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
+          }
+        ).removeEntry(baseName, { recursive: true });
+      } catch {}
+
+      try {
+        const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
+        await (
+          postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
+        ).removeEntry(`${baseName}.webp`);
+      } catch {}
+
+      // 3. 从元数据中移除
+      const allMeta = await this.readAllMeta();
+      if (allMeta[filename]) {
+        delete allMeta[filename];
+        const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
+        const mWritable = await metaHandle.createWritable();
+        await mWritable.write(JSON.stringify(allMeta, null, 2));
+        await mWritable.close();
+      }
+    } catch (err) {
+      console.warn('清理关联元数据失败:', err);
+    }
+  }
+
   public async recordNegativeRevision(
     filename: string,
     revision: number,

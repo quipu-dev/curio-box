@@ -1,18 +1,20 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import type { Artifact } from '@/types';
-import { Code2, Play } from 'lucide-react';
+import { Code2, FileText, Play, Star } from 'lucide-react';
 import type React from 'react';
 
 interface ArtifactCardProps {
   artifact: Artifact;
   onOpenStage: (artifact: Artifact) => void;
   onOpenStudio: (artifact: Artifact) => void;
+  onOpenInspector: (artifact: Artifact) => void;
 }
 
 export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   artifact,
   onOpenStage,
   onOpenStudio,
+  onOpenInspector,
 }) => {
   return (
     <div className="text-left w-full bg-surface border border-border rounded overflow-hidden flex flex-col group hover:border-muted hover:-translate-y-0.5 transition-all">
@@ -23,8 +25,16 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
         className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center cursor-pointer outline-none"
         title="点击进入全屏放映舞台"
       >
-        <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted z-10 rounded">
-          REV:{artifact.meta.currentRevision}
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+          {artifact.meta.rating && artifact.meta.rating > 0 ? (
+            <div className="bg-surface/90 backdrop-blur border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-mono text-amber-400 rounded flex items-center gap-0.5">
+              <Star className="w-2.5 h-2.5 fill-current" />
+              <span>{artifact.meta.rating}</span>
+            </div>
+          ) : null}
+          <div className="bg-surface/90 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted rounded">
+            REV:{artifact.meta.currentRevision}
+          </div>
         </div>
 
         {artifact.posterBlobUrl ? (
@@ -58,15 +68,26 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
             >
               {artifact.meta.name}
             </div>
-            <button
-              type="button"
-              onClick={() => onOpenStudio(artifact)}
-              className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-2 py-0.5 rounded hover:bg-sky-400/10 transition-colors shrink-0"
-              title="打开独立暗房工作台"
-            >
-              <Code2 className="w-3 h-3" />
-              <span>暗房</span>
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => onOpenInspector(artifact)}
+                className="flex items-center gap-1 text-[11px] font-mono text-muted hover:text-main border border-border px-1.5 py-0.5 rounded hover:bg-border transition-colors"
+                title="查看标本档案与元数据"
+              >
+                <FileText className="w-3 h-3" />
+                <span>档案</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenStudio(artifact)}
+                className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
+                title="打开独立暗房工作台"
+              >
+                <Code2 className="w-3 h-3" />
+                <span>暗房</span>
+              </button>
+            </div>
           </div>
           <div className="text-[11px] font-mono text-muted mb-2">{artifact.meta.filename}</div>
         </div>

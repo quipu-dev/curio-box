@@ -1,3 +1,4 @@
+import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import type { Artifact } from '@/types';
@@ -52,10 +53,10 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
 }) => {
   if (!artifact) return null;
 
+  const { toast } = useToast();
   const [initialDock] = useState<SavedDockState>(getInitialDockState);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string>('');
   const [dockEdge, setDockEdge] = useState<DockEdge>(initialDock.edge);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(initialDock.position);
@@ -179,11 +180,10 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   // 定格封印快照
   const handleCapturePoster = async () => {
     if (!captureHandleRef.current) {
-      setStatusMessage('预览尚未就绪，无法截图');
+      toast.warn('预览尚未就绪，无法截图');
       return;
     }
     try {
-      setStatusMessage('正在截取封面...');
       const blob = await captureHandleRef.current();
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
@@ -191,12 +191,10 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         posterBlobUrl: newUrl,
       };
       onUpdateArtifact(updated);
-      setStatusMessage('封面更新成功！');
-      setTimeout(() => setStatusMessage(''), 2500);
+      toast.success('封面截取并更新成功！');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatusMessage(`截图失败: ${msg}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      toast.error(`截图失败: ${msg}`);
     }
   };
 
@@ -391,13 +389,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
             </div>
           )}
         </div>
-
-        {/* 状态轻提示 */}
-        {statusMessage && (
-          <div className="absolute top-full mt-2 bg-black/85 border border-zinc-700 text-[11px] text-zinc-300 px-2.5 py-1 rounded shadow-lg pointer-events-none whitespace-nowrap animate-in fade-in">
-            {statusMessage}
-          </div>
-        )}
       </div>
     </div>
   );

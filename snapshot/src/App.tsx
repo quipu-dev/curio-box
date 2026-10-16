@@ -19,6 +19,7 @@ export function App() {
   // 暗房编辑器中的工件
   const [darkroomArtifact, setDarkroomArtifact] = useState<Artifact | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
+  const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   useEffect(() => {
@@ -30,9 +31,50 @@ export function App() {
     setArtifacts(list);
   }, []);
 
+  // 页面启动时自动尝试恢复已持久化的文件夹
   useEffect(() => {
-    loadArtifacts();
+    let isCancelled = false;
+    async function restoreDirectory() {
+      const result = await galleryStorage.restoreSavedHandle();
+      if (isCancelled) return;
+
+      if (result.permission === 'granted' && result.handle) {
+        setHasDirectory(true);
+        setPendingHandle(null);
+        await loadArtifacts();
+      } else if (result.handle) {
+        // 保存句柄待用户手势授权
+        setPendingHandle(result.handle);
+        await loadArtifacts();
+      } else {
+        await loadArtifacts();
+      }
+    }
+
+    restoreDirectory();
+    return () => {
+      isCancelled = true;
+    };
   }, [loadArtifacts]);
+
+  // 恢复待授权目录的用户手势处理
+  const handleRequestPendingPermission = async () => {
+    if (!pendingHandle) return;
+    try {
+      const perm = await (pendingHandle as unknown as {
+        requestPermission: (opt: { mode: string }) => Promise<PermissionState>;
+      }).requestPermission({ mode: 'readwrite' });
+
+      if (perm === 'granted') {
+        galleryStorage.setDirectoryHandle(pendingHandle);
+        setHasDirectory(true);
+        setPendingHandle(null);
+        await loadArtifacts();
+      }
+    } catch (err) {
+      console.error('授权目录失败:', err);
+    }
+  };
 
   const handlePickDirectory = async () => {
     try {
@@ -80,6 +122,8 @@ export function App() {
         onSearchChange={setSearchQuery}
         onPickDirectory={handlePickDirectory}
         hasDirectory={hasDirectory}
+        pendingDirectoryName={pendingHandle?.name}
+        onRequestPendingPermission={handleRequestPendingPermission}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />

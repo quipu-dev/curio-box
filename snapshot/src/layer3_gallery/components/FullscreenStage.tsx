@@ -7,6 +7,36 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 type DockEdge = 'top' | 'bottom' | 'left' | 'right';
 
+interface SavedDockState {
+  edge: DockEdge;
+  position: { x: number; y: number };
+}
+
+const DOCK_STORAGE_KEY = 'curio_dock_state_v1';
+
+function getInitialDockState(): SavedDockState {
+  if (typeof window === 'undefined') {
+    return { edge: 'top', position: { x: 300, y: 0 } };
+  }
+  try {
+    const raw = localStorage.getItem(DOCK_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SavedDockState;
+      if (parsed.edge && parsed.position) {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        // 边界安全校验，避免分辨率变化后飞出可视区域
+        const safeX = Math.max(0, Math.min(w, parsed.position.x));
+        const safeY = Math.max(0, Math.min(h, parsed.position.y));
+        return { edge: parsed.edge, position: { x: safeX, y: safeY } };
+      }
+    }
+  } catch {
+    // 容错处理
+  }
+  return { edge: 'top', position: { x: window.innerWidth / 2, y: 0 } };
+}
+
 interface FullscreenStageProps {
   artifact: Artifact | null;
   onClose: () => void;
@@ -22,15 +52,13 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
 }) => {
   if (!artifact) return null;
 
+  const [initialDock] = useState<SavedDockState>(getInitialDockState);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [dockEdge, setDockEdge] = useState<DockEdge>('top');
+  const [dockEdge, setDockEdge] = useState<DockEdge>(initialDock.edge);
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [position, setPosition] = useState<{ x: number; y: number }>({
-    x: typeof window !== 'undefined' ? window.innerWidth / 2 : 300,
-    y: 0,
-  });
+  const [position, setPosition] = useState<{ x: number; y: number }>(initialDock.position);
 
   const isDraggingRef = useRef<boolean>(false);
   const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -107,18 +135,34 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
 
         const minDist = Math.min(distTop, distBottom, distLeft, distRight);
 
+        let targetEdge: DockEdge = 'top';
+        let targetPos = { x: curX, y: curY };
+
         if (minDist === distTop) {
-          setDockEdge('top');
-          setPosition({ x: Math.max(160, Math.min(w - 160, curX)), y: 0 });
+          targetEdge = 'top';
+          targetPos = { x: Math.max(160, Math.min(w - 160, curX)), y: 0 };
         } else if (minDist === distBottom) {
-          setDockEdge('bottom');
-          setPosition({ x: Math.max(160, Math.min(w - 160, curX)), y: h });
+          targetEdge = 'bottom';
+          targetPos = { x: Math.max(160, Math.min(w - 160, curX)), y: h };
         } else if (minDist === distLeft) {
-          setDockEdge('left');
-          setPosition({ x: 0, y: Math.max(120, Math.min(h - 120, curY)) });
+          targetEdge = 'left';
+          targetPos = { x: 0, y: Math.max(120, Math.min(h - 120, curY)) };
         } else {
-          setDockEdge('right');
-          setPosition({ x: w, y: Math.max(120, Math.min(h - 120, curY)) });
+          targetEdge = 'right';
+          targetPos = { x: w, y: Math.max(120, Math.min(h - 120, curY)) };
+        }
+
+        setDockEdge(targetEdge);
+        setPosition(targetPos);
+
+        // 磁吸位置持久化到本地存储
+        try {
+          localStorage.setItem(
+            DOCK_STORAGE_KEY,
+            JSON.stringify({ edge: targetEdge, position: targetPos }),
+          );
+        } catch {
+          // 容错处理
         }
       }
     }

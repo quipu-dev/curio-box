@@ -4,12 +4,86 @@ const GALLERY_DIR = '.gallery';
 const POSTERS_DIR = 'posters';
 const NEGATIVES_DIR = 'negatives';
 const META_FILE = 'meta.json';
+const IDB_NAME = 'curio_box_meta_db';
+const IDB_STORE = 'fs_handles';
+const IDB_ACTIVE_KEY = 'active_directory_handle';
+
+function openHandleDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(IDB_STORE)) {
+        request.result.createObjectStore(IDB_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function persistHandleToIDB(handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(handle, IDB_ACTIVE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('持久化目录句柄至 IndexedDB 失败:', err);
+  }
+}
+
+async function loadHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openHandleDB();
+    return await new Promise<FileSystemDirectoryHandle | null>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(IDB_ACTIVE_KEY);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
 
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
 
   public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
     this.dirHandle = handle;
+    // 异步写入持久化存储
+    persistHandleToIDB(handle).catch(() => {});
+  }
+
+  public getDirectoryHandle(): FileSystemDirectoryHandle | null {
+    return this.dirHandle;
+  }
+
+  public async restoreSavedHandle(): Promise<{
+    handle: FileSystemDirectoryHandle | null;
+    permission: PermissionState;
+  }> {
+    const saved = await loadHandleFromIDB();
+    if (!saved) {
+      return { handle: null, permission: 'prompt' };
+    }
+
+    try {
+      // 检验是否仍保有读写权限
+      const perm = await (saved as unknown as {
+        queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
+      }).queryPermission({ mode: 'readwrite' });
+
+      if (perm === 'granted') {
+        this.dirHandle = saved;
+      }
+      return { handle: saved, permission: perm };
+    } catch {
+      return { handle: saved, permission: 'prompt' };
+    }
   }
 
   public hasHandle(): boolean {

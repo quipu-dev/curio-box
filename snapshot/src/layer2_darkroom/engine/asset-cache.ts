@@ -1,7 +1,7 @@
 export interface ExternalAsset {
   url: string;
   type: 'script' | 'style';
-  status: 'cached' | 'fetching' | 'pending' | 'failed' | 'cors_restricted';
+  status: 'cached' | 'fetching' | 'pending' | 'failed' | 'skipped';
 }
 
 export interface AssetCacheStats {
@@ -11,6 +11,9 @@ export interface AssetCacheStats {
 }
 
 const CACHE_NAME = 'curio_box_asset_cache_v1';
+
+// 已知不支持或不适宜 CORS fetch 的动态运行时 CDN 域名（这些通过原生 script 标签加载完全正常）
+const NON_CORS_DOMAINS = ['cdn.tailwindcss.com'];
 
 export const AssetCacheEngine = {
   /**
@@ -36,6 +39,18 @@ export const AssetCacheEngine = {
     }
 
     return assets;
+  },
+
+  /**
+   * 判断一个 URL 是否适合通过 CORS fetch 抓取缓存
+   */
+  canCorsFetch(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return !NON_CORS_DOMAINS.some((domain) => parsed.hostname.includes(domain));
+    } catch {
+      return false;
+    }
   },
 
   /**
@@ -70,13 +85,14 @@ export const AssetCacheEngine = {
   },
 
   /**
-   * 抓取并将外部资源保存至本地 Cache Storage（静默处理 CORS 失败）
+   * 抓取并将外部资源保存至本地 Cache Storage
    */
   async cacheAsset(url: string): Promise<boolean> {
+    if (!this.canCorsFetch(url)) return false;
     if (typeof window === 'undefined' || !('caches' in window)) return false;
+
     try {
       const cache = await caches.open(CACHE_NAME);
-      // 发起请求，注意若对方服务端未返回 Access-Control-Allow-Origin，将触发可捕获的 TypeError
       const response = await fetch(url, { mode: 'cors' });
       if (response.ok) {
         await cache.put(url, response.clone());
@@ -84,13 +100,12 @@ export const AssetCacheEngine = {
       }
       return false;
     } catch {
-      // 对不支持 CORS fetch 的 CDN 静默降级，不打印控制台错误打扰用户
       return false;
     }
   },
 
   /**
-   * 解析 HTML：已缓存资源以内联 script/style 安全注入（规避 sandbox blob 跨源限制），未缓存资源后台静默预热
+   * 解析 HTML：已缓存资源以内联回调函数安全注入（防 $ 符号展开陷阱）
    */
   async resolveAndWarmupHtml(
     rawHtml: string,
@@ -108,6 +123,13 @@ export const AssetCacheEngine = {
     let cachedCount = 0;
 
     for (const asset of rawAssets) {
+      const isEligible = this.canCorsFetch(asset.url);
+      if (!isEligible) {
+        // 不支持 CORS 的动态外链，跳过 fetch，保持原生标签
+        assetsWithStatus.push({ ...asset, status: 'skipped' });
+        continue;
+      }
+
       const alreadyCached = await this.isCached(asset.url);
       if (alreadyCached) {
         const textContent = await this.getCachedText(asset.url);
@@ -116,24 +138,25 @@ export const AssetCacheEngine = {
           assetsWithStatus.push({ ...asset, status: 'cached' });
 
           if (asset.type === 'script') {
-            // 将 <script src="..."></script> 完整替换为内联脚本
+            // 注意：必须使用回调函数 () => replacement，防止代码中的 $ 符号被当成特殊替换模式展开
             const scriptTagPattern = new RegExp(
               `<script\\s+[^>]*src=["']${escapeRegExp(asset.url)}["'][^>]*>\\s*<\\/script>`,
               'gi',
             );
             modifiedHtml = modifiedHtml.replace(
               scriptTagPattern,
-              `<script data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</script>`,
+              () =>
+                `<script data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</script>`,
             );
           } else {
-            // 将 <link href="..." /> 完整替换为内联样式
             const linkTagPattern = new RegExp(
               `<link\\s+[^>]*href=["']${escapeRegExp(asset.url)}["'][^>]*\\/?>`,
               'gi',
             );
             modifiedHtml = modifiedHtml.replace(
               linkTagPattern,
-              `<style data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</style>`,
+              () =>
+                `<style data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</style>`,
             );
           }
           continue;
@@ -142,7 +165,7 @@ export const AssetCacheEngine = {
 
       assetsWithStatus.push({ ...asset, status: 'pending' });
 
-      // 后台静默预热，不阻塞当前装载
+      // 后台静默预热
       this.cacheAsset(asset.url).catch(() => {});
     }
 

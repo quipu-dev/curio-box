@@ -1,49 +1,59 @@
-这次报错由三个核心原因引发：
+这是一个非常隐蔽但破坏力极强的典型底层缺陷：
 
-1. **`Not allowed to load local resource: blob:...` 与 `THREE is not defined`（致命因）**：
-   沙箱 `iframe` 启用了 `sandbox="allow-scripts"`，其上下文拥有不透明的唯一 Origin（`origin: null`）。在此隔离沙箱中，浏览器基于跨源安全规范**严禁从宿主加载 `blob:http://localhost:5173/...` 脚本**。导致 Three.js 等脚本被浏览器直接拦截抛弃，最终引发未定义崩溃。
-2. **`cdn.tailwindcss.com CORS net::ERR_FAILED`**：
-   `cdn.tailwindcss.com` 未配置允许任意源的 CORS 头，使用 JavaScript 的 `fetch(url, { mode: 'cors' })` 会被同源策略拒绝；但原 HTML 的 `<script src="...">` 标签加载是不受 CORS 限制的。
-3. **`Warning: Internal React error: Expected static flag was missing`**：
-   `App.tsx` 常驻渲染两个返回 `null` 的全屏复杂组件，在 Fast Refresh / React 18 Fiber 挂载卸载时触发了虚拟 DOM 标志错位。
+从你的截图中可以清晰看到，工件背景直接被糊上了一大段 KaTeX / JS 库的源码文本，并且控制台报错：
+`Uncaught SyntaxError: missing ) after argument list`。
 
-我们将通过**“内联置换 (Inline Injection) 替代 Blob URL”**并优化 CORS 降级策略与条件渲染彻底解决这些问题。
+我们已精确定位到根本原因：
+1. **背景泄漏代码与语法损坏（核心元凶）**：
+   在 `AssetCacheEngine.ts` 中，我们使用了 `modifiedHtml.replace(pattern, replacementString)`。在 JavaScript 规范中，**当 `replace` 第二个参数是字符串时，如果内容包含 `$` 符号（例如 `$1`、`$'`、`$&` 等），会被当成特殊模式替换展开**！
+   现代 JS 库（KaTeX、Tone.js、jQuery 等）代码中充斥着大量的 `$` 符号和正则变量，导致脚本代码被错误解析展开并破坏了 `<script>` 闭合标签，使一部分未闭合的 JS 源码被浏览器直接当成普通 HTML 文本渲染在了页面背景上，并引发语法断裂报错。
+2. **`cdn.tailwindcss.com` 控制台标红**：
+   `cdn.tailwindcss.com` 不支持 CORS `fetch` 请求。即使代码里做了 `catch`，浏览器 DevTools 仍会在底层将失败的跨域网络请求标红。我们将对其建立跳过名单，让其自然走原生的 `<script src="...">` 加载。
+3. **`favicon.ico 404`**：
+   缺少网站图标，导致浏览器向本地 Vite 服务器请求 404。
 
-## [WIP] fix: 修复沙箱跨源 Blob 加载拦截与静态资源 CORS 失败问题
+下面是修复计划：
+
+## [WIP] fix: 修复替换内联脚本时的美元符展开陷阱与非CORS预热报错
 
 ### 错误分析
-1. **沙箱 Opaque Origin 与 Blob URL 冲突**：
-   在启用 `sandbox="allow-scripts"` 的 IFrame 中，沙箱内部的 origin 为 `null`。当通过 `URL.createObjectURL(blob)` 替换外链为 `blob:http://localhost:5173/xxx` 后，沙箱加载宿主域的 Blob 资源会被 Chrome 安全机制判定为非法的跨源本地资源访问（`Not allowed to load local resource: blob:...`），导致 Three.js / p5.js 脚本全数加载失败，报 `THREE is not defined`。
-2. **CORS Fetch 阻断与告警过载**：
-   部分外部服务（如 `cdn.tailwindcss.com`）没有返回宽松的 `Access-Control-Allow-Origin` 响应头，`fetch()` 必然会触发 TypeError。原代码未对非 CORS 资源做静默降级，导致控制台充斥大量红色网络报错。
-3. **React Fiber 静态标志异常**：
-   `App.tsx` 中常驻挂载 `FullscreenStage` 和 `DarkroomStudio`，当传入 `artifact={null}` 时组件内部直接 `return null`。在 React 18 StrictMode 与 Vite 热重载协同下，触发了组件内部 hooks 与条件渲染的分支标记异常。
+1. **`String.prototype.replace` 中的 `$` 展开陷阱**：
+   在 `AssetCacheEngine.ts` 中执行了 `modifiedHtml = modifiedHtml.replace(scriptTagPattern, `<script>...${textContent}...</script>`)`。被缓存的第三方库（如 KaTeX、Tone.js）内含有大量 `$` 特殊字符（例如 `t.replace(a, "-$1")`、`$()`），导致 `replace` 将脚本内容误认为正则替换指令（如 `$'` 代表替换匹配位置后面的文本），使得生成的 HTML 结构被破坏、标签无法闭合、源码溢出到 DOM 中成为背景文本，并导致 JS 脚本执行抛出 `Uncaught SyntaxError: missing ) after argument list`。
+   **修复方案**：必须使用回调函数形式 `modifiedHtml.replace(pattern, () => ...)`，回调返回值中的 `$` 字符绝不会被二次展开。
+2. **非 CORS CDN 的无效抓取**：
+   `cdn.tailwindcss.com` 等服务明确不支持 CORS fetch。虽然不影响标签加载，但会触发控制台红色网络报错。
+   **修复方案**：在 `AssetCacheEngine` 中建立黑名单过滤，对已知不支持 CORS 的域名主动跳过 fetch，直接保留原标签。
+3. **Favicon 404**：
+   提供内嵌 SVG 图标，消除浏览器默认请求报错。
 
 ### 用户需求
-修复控制台的所有报错，确保工件代码（尤其是包含 Three.js、Tailwind 等外链的工件）在暗房视口与全屏舞台中能够秒级顺畅运行。
+1. 消除工件画面上浮现的代码乱码，修复 JS 执行报错，确保工件所有脚本正常运行。
+2. 消除 `cdn.tailwindcss.com` 的控制台网络报错以及 `favicon.ico 404`。
 
 ### 评论
-沙箱隔离（Security Sandbox）与资源本地化（Asset Vendoring）是工件系统的核心保障。通过直接将已缓存的脚本代码转换为原生 `<script>` 内联注入，既完全避开了浏览器的跨源拦截限制，又能达到 0 网络时延的究极秒开体验。
+字符串替换中的 `$` 展开是前端工程化（尤其是自制 Bundler 或预处理器）中极易被忽略的边界问题。采用函数式替换（Replacer Function）是唯一标准且安全的方式。
 
 ### 目标
-1. **重构 `asset-cache.ts` 的置换策略**：已缓存的脚本与样式改用**内联标签（Inline `<script>` / `<style>`）**安全替换，彻底废弃引发跨源拦截的 `blob:http://...` 方案。
-2. **优化 CORS 容错机制**：遇到不支持 CORS fetch 的 CDN 时，静默降级保留原远程外链，让浏览器通过原生 `<script src="...">` 标签无阻碍加载。
-3. **修复 `App.tsx` 挂载模式**：改用 React 标准条件渲染 `{stageArtifact && <FullscreenStage ... />}`，消除 React 18 Fiber 异常告警。
+1. **修改 `asset-cache.ts`**：
+   - 替换逻辑全部改为函数回调式 `replace(pattern, () => replacement)`，彻底杜绝 `$` 符号展开破坏代码。
+   - 增加对不支持 CORS fetch 域名的跳过检查（如 `cdn.tailwindcss.com`）。
+2. **修改 `index.html`**：
+   - 添加内联 SVG Favicon，消除 404 报错。
 
 ### 基本原理
-- **内联安全置换**：在 `sandbox="allow-scripts"` 沙箱中，内联 `<script>/* code */</script>` 是完全合法的且与沙箱自身的生命周期强绑定。从 Cache Storage 读取到脚本字符串后，将原本的 `<script src="...">` 替换为内联代码，不仅避开任何 Origin 限制，还能杜绝所有的 `blob:` 泄漏与跨域阻断。
-- **优雅降级（Graceful Degradation）**：如果资源因 CORS 无法通过 fetch 抓取，引擎将不再重复抛出骚扰性日志，保留原始外链不变，由浏览器原生的跨域 script 标签机制完成网络加载。
+- 在 MDN 规范中，`str.replace(regexp, newSubstr)` 会将 `newSubstr` 中的 `$1`, `$&`, `$'` 作为特殊模式替换，破坏包含此类字符的 JavaScript 源代码；而 `str.replace(regexp, replacerFunction)` 保证返回值以纯字符串原始输出，不受任何元字符影响。
+- 探测 URL 时，若属于非 CORS 域名则不发起 `fetch`，保证浏览器网络面板纯净无红标。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/sandbox #comp/darkroom #concept/cache #concept/parser #scope/core #task/domain/storage #task/object/asset-cache #task/action/bug-fix #task/state/begin
+#intent/fix #flow/ready #priority/critical #comp/darkroom #concept/parser #concept/cache #scope/core #task/domain/storage #task/object/asset-cache #task/action/bug-fix #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 重构资产缓存引擎的注入与降级逻辑
+#### Acts 1: 修复 AssetCacheEngine 的替换机制与 CORS 过滤
 
-使用内联置换方案，并对不支持 CORS 的外部 CDN 提供静默降级保护。
+修改 `src/layer2_darkroom/engine/asset-cache.ts`：将 `replace` 改为回调函数传参，并针对非 CORS 域名安全跳过。
 
 ~~~~~act
 write_file
@@ -53,7 +63,7 @@ src/layer2_darkroom/engine/asset-cache.ts
 export interface ExternalAsset {
   url: string;
   type: 'script' | 'style';
-  status: 'cached' | 'fetching' | 'pending' | 'failed' | 'cors_restricted';
+  status: 'cached' | 'fetching' | 'pending' | 'failed' | 'skipped';
 }
 
 export interface AssetCacheStats {
@@ -63,6 +73,9 @@ export interface AssetCacheStats {
 }
 
 const CACHE_NAME = 'curio_box_asset_cache_v1';
+
+// 已知不支持或不适宜 CORS fetch 的动态运行时 CDN 域名（这些通过原生 script 标签加载完全正常）
+const NON_CORS_DOMAINS = ['cdn.tailwindcss.com'];
 
 export const AssetCacheEngine = {
   /**
@@ -88,6 +101,18 @@ export const AssetCacheEngine = {
     }
 
     return assets;
+  },
+
+  /**
+   * 判断一个 URL 是否适合通过 CORS fetch 抓取缓存
+   */
+  canCorsFetch(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return !NON_CORS_DOMAINS.some((domain) => parsed.hostname.includes(domain));
+    } catch {
+      return false;
+    }
   },
 
   /**
@@ -122,13 +147,14 @@ export const AssetCacheEngine = {
   },
 
   /**
-   * 抓取并将外部资源保存至本地 Cache Storage（静默处理 CORS 失败）
+   * 抓取并将外部资源保存至本地 Cache Storage
    */
   async cacheAsset(url: string): Promise<boolean> {
+    if (!this.canCorsFetch(url)) return false;
     if (typeof window === 'undefined' || !('caches' in window)) return false;
+
     try {
       const cache = await caches.open(CACHE_NAME);
-      // 发起请求，注意若对方服务端未返回 Access-Control-Allow-Origin，将触发可捕获的 TypeError
       const response = await fetch(url, { mode: 'cors' });
       if (response.ok) {
         await cache.put(url, response.clone());
@@ -136,13 +162,12 @@ export const AssetCacheEngine = {
       }
       return false;
     } catch {
-      // 对不支持 CORS fetch 的 CDN 静默降级，不打印控制台错误打扰用户
       return false;
     }
   },
 
   /**
-   * 解析 HTML：已缓存资源以内联 script/style 安全注入（规避 sandbox blob 跨源限制），未缓存资源后台静默预热
+   * 解析 HTML：已缓存资源以内联回调函数安全注入（防 $ 符号展开陷阱）
    */
   async resolveAndWarmupHtml(
     rawHtml: string,
@@ -160,6 +185,13 @@ export const AssetCacheEngine = {
     let cachedCount = 0;
 
     for (const asset of rawAssets) {
+      const isEligible = this.canCorsFetch(asset.url);
+      if (!isEligible) {
+        // 不支持 CORS 的动态外链，跳过 fetch，保持原生标签
+        assetsWithStatus.push({ ...asset, status: 'skipped' });
+        continue;
+      }
+
       const alreadyCached = await this.isCached(asset.url);
       if (alreadyCached) {
         const textContent = await this.getCachedText(asset.url);
@@ -168,24 +200,25 @@ export const AssetCacheEngine = {
           assetsWithStatus.push({ ...asset, status: 'cached' });
 
           if (asset.type === 'script') {
-            // 将 <script src="..."></script> 完整替换为内联脚本
+            // 注意：必须使用回调函数 () => replacement，防止代码中的 $ 符号被当成特殊替换模式展开
             const scriptTagPattern = new RegExp(
               `<script\\s+[^>]*src=["']${escapeRegExp(asset.url)}["'][^>]*>\\s*<\\/script>`,
               'gi',
             );
             modifiedHtml = modifiedHtml.replace(
               scriptTagPattern,
-              `<script data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</script>`,
+              () =>
+                `<script data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</script>`,
             );
           } else {
-            // 将 <link href="..." /> 完整替换为内联样式
             const linkTagPattern = new RegExp(
               `<link\\s+[^>]*href=["']${escapeRegExp(asset.url)}["'][^>]*\\/?>`,
               'gi',
             );
             modifiedHtml = modifiedHtml.replace(
               linkTagPattern,
-              `<style data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</style>`,
+              () =>
+                `<style data-curio-cached="true">/* [Curio Box 本地离线加速] */\n${textContent}\n</style>`,
             );
           }
           continue;
@@ -194,7 +227,7 @@ export const AssetCacheEngine = {
 
       assetsWithStatus.push({ ...asset, status: 'pending' });
 
-      // 后台静默预热，不阻塞当前装载
+      // 后台静默预热
       this.cacheAsset(asset.url).catch(() => {});
     }
 
@@ -226,207 +259,30 @@ function escapeRegExp(string: string) {
 }
 ~~~~~
 
-#### Acts 2: 修复应用层组件的条件渲染
+#### Acts 2: 补充 Favicon 图标
 
-修改 `App.tsx`，使用标准条件渲染避免传递 `null` 导致的 React 18 Fiber 树 static flag 告警。
+在 `index.html` 中注入轻量 SVG favicon，消除控制台对 `favicon.ico` 的 404 报错。
 
 ~~~~~act
 write_file
-src/App.tsx
+index.html
 ~~~~~
-~~~~~typescript
-import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
-import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
-import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
-import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
-import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
-import { Header } from '@/layer3_gallery/components/Header';
-import type { Artifact } from '@/types';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-interface WindowWithFSA extends Window {
-  showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
-}
-
-export function App() {
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏放映中的工件
-  const [stageArtifact, setStageArtifact] = useState<Artifact | null>(null);
-  // 独立暗房工作台中的工件
-  const [studioArtifact, setStudioArtifact] = useState<Artifact | null>(null);
-  const [hasDirectory, setHasDirectory] = useState<boolean>(false);
-  const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-
-  useEffect(() => {
-    document.body.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  const loadArtifacts = useCallback(async () => {
-    const list = await galleryStorage.scanArtifacts();
-    setArtifacts(list);
-  }, []);
-
-  // 页面启动时自动尝试恢复已持久化的文件夹
-  useEffect(() => {
-    let isCancelled = false;
-    async function restoreDirectory() {
-      const result = await galleryStorage.restoreSavedHandle();
-      if (isCancelled) return;
-
-      if (result.permission === 'granted' && result.handle) {
-        setHasDirectory(true);
-        setPendingHandle(null);
-        await loadArtifacts();
-      } else if (result.handle) {
-        setPendingHandle(result.handle);
-        await loadArtifacts();
-      } else {
-        await loadArtifacts();
-      }
-    }
-
-    restoreDirectory();
-    return () => {
-      isCancelled = true;
-    };
-  }, [loadArtifacts]);
-
-  // 恢复待授权目录的用户手势处理
-  const handleRequestPendingPermission = async () => {
-    if (!pendingHandle) return;
-    try {
-      const perm = await (
-        pendingHandle as unknown as {
-          requestPermission: (opt: { mode: string }) => Promise<PermissionState>;
-        }
-      ).requestPermission({ mode: 'readwrite' });
-
-      if (perm === 'granted') {
-        galleryStorage.setDirectoryHandle(pendingHandle);
-        setHasDirectory(true);
-        setPendingHandle(null);
-        await loadArtifacts();
-      }
-    } catch (err) {
-      console.error('授权目录失败:', err);
-    }
-  };
-
-  const handlePickDirectory = async () => {
-    try {
-      const fsaWindow = window as unknown as WindowWithFSA;
-      if (typeof fsaWindow.showDirectoryPicker === 'function') {
-        const handle = await fsaWindow.showDirectoryPicker();
-        galleryStorage.setDirectoryHandle(handle);
-        setHasDirectory(true);
-        await loadArtifacts();
-      } else {
-        alert('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge 等现代浏览器。');
-      }
-    } catch (err: unknown) {
-      const e = err as Error;
-      if (e.name !== 'AbortError') {
-        console.error('选择目录失败:', err);
-      }
-    }
-  };
-
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
-  const handleUpdateArtifact = (updated: Artifact) => {
-    setArtifacts((prev) =>
-      prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
-    );
-    if (stageArtifact?.meta.filename === updated.meta.filename) {
-      setStageArtifact(updated);
-    }
-    if (studioArtifact?.meta.filename === updated.meta.filename) {
-      setStudioArtifact(updated);
-    }
-  };
-
-  const filteredArtifacts = useMemo(() => {
-    return artifacts.filter((item) => TagQueryEngine.match(item.meta.tags, searchQuery));
-  }, [artifacts, searchQuery]);
-
-  return (
-    <div className="min-h-screen flex flex-col bg-background text-main">
-      <Header
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onPickDirectory={handlePickDirectory}
-        hasDirectory={hasDirectory}
-        pendingDirectoryName={pendingHandle?.name}
-        onRequestPendingPermission={handleRequestPendingPermission}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-      />
-
-      <main className="flex-1 p-6 md:p-8">
-        <div className="mb-6 flex justify-between items-center text-xs font-mono text-muted">
-          <div>
-            陈列展品总数：
-            <span className="text-main font-semibold">{filteredArtifacts.length}</span> /{' '}
-            {artifacts.length}
-          </div>
-          {!hasDirectory && <div>（当前处于内置演示库模式，可点击右上角载入本地工件目录）</div>}
-        </div>
-
-        {filteredArtifacts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredArtifacts.map((artifact) => (
-              <ArtifactCard
-                key={artifact.meta.filename}
-                artifact={artifact}
-                onOpenStage={(art) => setStageArtifact(art)}
-                onOpenStudio={(art) => setStudioArtifact(art)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
-            <span>未匹配到符合检索条件的工件</span>
-            <span className="text-xs opacity-60">尝试修改大众分类筛选词或清除过滤条件</span>
-          </div>
-        )}
-      </main>
-
-      {/* 活体全屏放映舞台 (显式条件挂载) */}
-      {stageArtifact && (
-        <FullscreenStage
-          artifact={stageArtifact}
-          onClose={() => setStageArtifact(null)}
-          onOpenDarkroom={(art) => {
-            setStageArtifact(null);
-            setStudioArtifact(art);
-          }}
-          onUpdateArtifact={handleUpdateArtifact}
-        />
-      )}
-
-      {/* 独立全屏暗房工作台 (显式条件挂载) */}
-      {studioArtifact && (
-        <DarkroomStudio
-          artifact={studioArtifact}
-          onBackToGallery={() => setStudioArtifact(null)}
-          onOpenStage={(art) => {
-            setStudioArtifact(null);
-            setStageArtifact(art);
-          }}
-          onUpdateArtifact={handleUpdateArtifact}
-        />
-      )}
-    </div>
-  );
-}
-
-export default App;
+~~~~~html
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>" />
+    <title>curio-box | 视觉工件画廊与镜像暗房</title>
+  </head>
+  <body data-theme="dark">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
 ~~~~~
 
 ### 下一步建议
-1. 刷新浏览器查看控制台，确认 `Not allowed to load local resource` 与 `THREE is not defined` 已经彻底消除，工件正常完成渲染。
-2. 在暗房工作台的“标本与缓存”选项卡中，测试带有外链库的工件，验证内联加速机制与离线秒开体验。
+1. 刷新页面重新打开该工件，确认背景上的代码字符已经完全消失，Canvas 与公式正常渲染无断裂。
+2. 观察控制台，确认 CORS 标红与 `favicon.ico 404` 已彻底消除。

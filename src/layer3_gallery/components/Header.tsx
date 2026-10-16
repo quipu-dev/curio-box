@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
           <input
             type="text"
             className="w-full bg-transparent border-0 outline-none text-main font-mono text-xs placeholder:text-muted"
-            placeholder="大众分类检索：形态:webgl 物理:流体 -风格:粗野"
+            placeholder="标签检索：形态:webgl 物理:流体 -风格:粗野"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
           />
@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onOpenNewArtifactComposer}
           className="flex items-center gap-1.5 bg-main text-surface px-3 py-1.5 text-xs font-mono font-medium hover:opacity-90 transition-opacity rounded"
-          title="创建新工件标本"
+          title="创建新工件"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>新建工件</span>
@@ -62,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onImportFromClipboard}
           className="flex items-center gap-1.5 border border-border px-3 py-1.5 text-xs font-mono hover:bg-border transition-colors rounded text-muted hover:text-main"
-          title="从剪贴板自动萃取并导入工件"
+          title="从剪贴板读取代码并导入"
         >
           <Clipboard className="w-3.5 h-3.5 text-sky-400" />
           <span>剪贴板导入</span>
@@ -74,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onRequestPendingPermission}
             className="flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/40 text-sky-400 px-3 py-1.5 text-xs font-mono hover:bg-sky-500/20 transition-colors rounded animate-pulse"
-            title="点击恢复上次挂载目录的读取授权"
+            title="点击恢复上次目录的访问授权"
           >
             <FolderOpen className="w-3.5 h-3.5" />
             <span>恢复关联目录: {pendingDirectoryName}</span>

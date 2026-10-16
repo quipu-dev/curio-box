@@ -45,7 +45,7 @@ const CAPTURE_HARNESS_SCRIPT = `
         window.parent.postMessage({
           type: 'CURIO_CAPTURE_RESPONSE',
           requestId: reqId,
-          error: '工件视口内未探测到 Canvas 画布'
+          error: '视口内未检测到 Canvas 画布'
         }, '*');
         return;
       }
@@ -56,7 +56,7 @@ const CAPTURE_HARNESS_SCRIPT = `
         dataUrl: dataUrl
       }, '*');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '画布定格失败';
+      const errorMsg = err instanceof Error ? err.message : '画布截取失败';
       window.parent.postMessage({
         type: 'CURIO_CAPTURE_RESPONSE',
         requestId: reqId,
@@ -76,7 +76,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
 }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [loadingTip, setLoadingTip] = useState<string>('正在解析并预热工件环境...');
+  const [loadingTip, setLoadingTip] = useState<string>('正在解析工件代码...');
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -90,12 +90,12 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
 
     let isSubscribed = true;
     setIsLoading(true);
-    setLoadingTip('正在探测外部 CDN 资源并加载缓存...');
+    setLoadingTip('正在检查资源缓存...');
 
     // 使用 AssetCacheEngine 处理并置换已缓存的 CDN 外链
     AssetCacheEngine.resolveAndWarmupHtml(htmlPayload, (stats) => {
       if (stats.total > 0) {
-        setLoadingTip(`资源加速已就绪 (${stats.cached}/${stats.total})，正在挂载沙箱...`);
+        setLoadingTip(`资源准备就绪 (${stats.cached}/${stats.total})，正在挂载沙箱...`);
       }
     }).then(({ resolvedHtml }) => {
       if (!isSubscribed) return;
@@ -141,7 +141,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
     onCaptureReady(async () => {
       const iframe = iframeRef.current;
       if (!iframe || !iframe.contentWindow) {
-        throw new Error('沙箱未激活，无法定格封印快照');
+        throw new Error('沙箱未运行，无法截取封面图');
       }
 
       const contentWindow = iframe.contentWindow;
@@ -150,7 +150,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
       return new Promise<Blob>((resolve, reject) => {
         const timeoutTimer = setTimeout(() => {
           window.removeEventListener('message', handleResponse);
-          reject(new Error('定格捕获超时：沙箱内未在规定时间内响应'));
+          reject(new Error('画面捕获超时：沙箱内未在规定时间内响应'));
         }, 4000);
 
         const handleResponse = async (event: MessageEvent) => {
@@ -177,7 +177,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
             resolve(blob);
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            reject(new Error(`快照数据流转换失败: ${msg}`));
+            reject(new Error(`封面数据转换失败: ${msg}`));
           }
         };
 
@@ -209,12 +209,12 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
         <div className={`relative flex items-center justify-center ${aspectClass}`}>
           <iframe
             ref={iframeRef}
-            title="工件独立沙箱视口"
+            title="工件预览沙箱"
             sandbox="allow-scripts"
             className="w-full h-full border-0 bg-transparent"
           />
 
-          {/* 微光加载 HUD 遮罩动画 */}
+          {/* 加载中状态指示 */}
           {isLoading && (
             <div className="absolute inset-0 bg-zinc-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 transition-opacity duration-500 z-20 pointer-events-none select-none">
               <div className="relative flex items-center justify-center">
@@ -223,7 +223,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
               </div>
               <div className="flex flex-col items-center gap-1">
                 <div className="text-xs font-mono text-zinc-200 font-medium tracking-wide">
-                  正在唤醒活体标本视口
+                  正在载入工件视口
                 </div>
                 <div className="text-[11px] font-mono text-zinc-500">{loadingTip}</div>
               </div>
@@ -232,8 +232,8 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
         </div>
       ) : (
         <div className="text-muted text-xs font-mono select-none flex flex-col items-center gap-2">
-          <span>[ 工件处于静默陈列态 ]</span>
-          <span className="text-[11px] opacity-70">点击上方“活体展演”以激活动态沙箱</span>
+          <span>[ 视口已休眠 ]</span>
+          <span className="text-[11px] opacity-70">点击上方“运行”以启动预览</span>
         </div>
       )}
     </div>

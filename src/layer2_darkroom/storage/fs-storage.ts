@@ -100,21 +100,15 @@ export class GalleryStorage {
     try {
       const existingRev1 = await this.loadNegativeRevision(filename, 1);
       if (!existingRev1) {
-        await this.recordNegativeRevision(
-          filename,
-          1,
-          initialContent,
-          'genesis',
-          '初始导入原生底片',
-        );
+        await this.recordNegativeRevision(filename, 1, initialContent, 'genesis', '初始版本');
       }
     } catch (err) {
-      console.warn('创世底片检验或写入异常:', err);
+      console.warn('初始版本检验或写入异常:', err);
     }
   }
 
   /**
-   * 创建并固化一个新工件，自动建立创世底片 REV:1
+   * 创建并保存一个新工件，自动记录初始版本 REV:1
    */
   public async createArtifact(
     filename: string,
@@ -132,14 +126,14 @@ export class GalleryStorage {
     };
 
     if (this.dirHandle) {
-      // 1. 物理写入 HTML 源文件
+      // 1. 写入 HTML 源文件
       const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
 
-      // 2. 建立 REV:1 创世底片
-      await this.recordNegativeRevision(filename, 1, content, 'genesis', '初始导入创世底片');
+      // 2. 建立 REV:1 初始版本快照
+      await this.recordNegativeRevision(filename, 1, content, 'genesis', '初始版本');
 
       // 3. 记录元数据
       await this.saveMeta(newMeta);
@@ -285,7 +279,7 @@ export class GalleryStorage {
         timestamp: new Date().toISOString(),
         action,
         description:
-          description || (action === 'genesis' ? '创世底片' : `底片快照 REV:${revision}`),
+          description || (action === 'genesis' ? '初始版本' : `版本快照 REV:${revision}`),
       });
       ledger.sort((a, b) => a.revision - b.revision);
 
@@ -324,7 +318,7 @@ export class GalleryStorage {
           revision: 1,
           timestamp: new Date().toISOString(),
           action: 'genesis',
-          description: '内置演示底片',
+          description: '示例版本',
         },
       ];
     }
@@ -353,7 +347,7 @@ export class GalleryStorage {
               revision: rev,
               timestamp: new Date().toISOString(),
               action: rev === 1 ? 'genesis' : 'patch',
-              description: rev === 1 ? '创世原生底片' : `快照 REV:${rev}`,
+              description: rev === 1 ? '初始版本' : `版本快照 REV:${rev}`,
             });
           }
         }

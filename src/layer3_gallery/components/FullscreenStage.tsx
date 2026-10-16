@@ -179,11 +179,11 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   // 定格封印快照
   const handleCapturePoster = async () => {
     if (!captureHandleRef.current) {
-      setStatusMessage('沙箱尚未准备好捕获快照');
+      setStatusMessage('预览尚未就绪，无法截图');
       return;
     }
     try {
-      setStatusMessage('正在定格无损封印快照...');
+      setStatusMessage('正在截取封面...');
       const blob = await captureHandleRef.current();
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
@@ -191,11 +191,11 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         posterBlobUrl: newUrl,
       };
       onUpdateArtifact(updated);
-      setStatusMessage('定格封印成功！快照已持久化');
+      setStatusMessage('封面更新成功！');
       setTimeout(() => setStatusMessage(''), 2500);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatusMessage(`定格失败: ${msg}`);
+      setStatusMessage(`截图失败: ${msg}`);
       setTimeout(() => setStatusMessage(''), 3000);
     }
   };
@@ -299,7 +299,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 type="button"
                 onClick={handleCapturePoster}
                 className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
-                title="定格封印当前帧"
+                title="截取当前画面为封面"
               >
                 <Camera className="w-3.5 h-3.5" />
               </button>
@@ -353,7 +353,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 type="button"
                 onClick={handleCapturePoster}
                 className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
-                title="定格封印当前帧"
+                title="截取当前画面为封面"
               >
                 <Camera className="w-3.5 h-3.5" />
               </button>

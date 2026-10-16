@@ -125,8 +125,8 @@ export function App() {
       setComposerInitialCode(wrapped);
     } catch {
       // 浏览器权限受阻时，给一份默认空白模板并引导粘贴
-      alert('无法直接读取剪贴板，已为您打开装配台，请在代码区按 Ctrl+V 粘贴。');
-      setComposerInitialCode(TitleSanitizerEngine.wrapAsCompleteHtml('', '新工件标本'));
+      alert('无法直接读取剪贴板，已为您打开编辑器，请在代码区按 Ctrl+V 粘贴。');
+      setComposerInitialCode(TitleSanitizerEngine.wrapAsCompleteHtml('', '新建工件'));
     }
   };
 
@@ -136,13 +136,13 @@ export function App() {
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>新工件标本</title>
+  <title>新建工件</title>
   <style>
     body { margin: 0; background: #0a0a0f; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
   </style>
 </head>
 <body>
-  <div>[ 活体工件准备就绪 ]</div>
+  <div>[ 工件准备就绪 ]</div>
   <script>
     console.log("Curio Sandbox Activated");
   </script>
@@ -246,11 +246,11 @@ export function App() {
       <main className="flex-1 p-6 md:p-8">
         <div className="mb-6 flex justify-between items-center text-xs font-mono text-muted">
           <div>
-            陈列展品总数：
+            工件总数：
             <span className="text-main font-semibold">{filteredArtifacts.length}</span> /{' '}
             {artifacts.length}
           </div>
-          {!hasDirectory && <div>（当前处于内置演示库模式，可点击右上角载入本地工件目录）</div>}
+          {!hasDirectory && <div>（当前为演示模式，可点击右上角打开本地工件目录）</div>}
         </div>
 
         {filteredArtifacts.length > 0 ? (
@@ -267,7 +267,7 @@ export function App() {
         ) : (
           <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
             <span>未匹配到符合检索条件的工件</span>
-            <span className="text-xs opacity-60">尝试修改大众分类筛选词或清除过滤条件</span>
+            <span className="text-xs opacity-60">尝试修改筛选词或清除过滤条件</span>
           </div>
         )}
       </main>
@@ -312,9 +312,9 @@ export function App() {
       {isDragOver && (
         <div className="fixed inset-0 z-50 bg-sky-950/80 backdrop-blur-md border-4 border-dashed border-sky-400 flex flex-col items-center justify-center gap-3 text-sky-200 pointer-events-none select-none animate-in fade-in">
           <UploadCloud className="w-16 h-16 text-sky-400 animate-bounce" />
-          <div className="text-xl font-bold font-mono">释放以封印新工件</div>
+          <div className="text-xl font-bold font-mono">释放以导入新工件</div>
           <div className="text-xs font-mono text-sky-300/80">
-            支持任意 .html 标本文件，自动提取标题并进入装配台
+            支持任意 .html 文件，自动提取标题并进入编辑器
           </div>
         </div>
       )}

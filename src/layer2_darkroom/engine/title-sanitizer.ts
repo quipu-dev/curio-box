@@ -15,7 +15,7 @@ export const TitleSanitizerEngine = {
   extractTitle(html: string): string {
     const trimmed = html.trim();
     if (!trimmed) {
-      return `工件标本_${new Date().toISOString().slice(0, 10)}`;
+      return `新建工件_${new Date().toISOString().slice(0, 10)}`;
     }
 
     const titleMatch = trimmed.match(/<title[^>]*>(.*?)<\/title>/i);
@@ -89,7 +89,7 @@ export const TitleSanitizerEngine = {
   /**
    * 检查代码完整性；若为裸 JS 或片段代码，自动包裹为标准单文件工件模板
    */
-  wrapAsCompleteHtml(rawCode: string, title = '新工件标本'): string {
+  wrapAsCompleteHtml(rawCode: string, title = '新建工件'): string {
     const trimmed = rawCode.trim();
     const hasHtmlStructure =
       /<html[\s>]/i.test(trimmed) ||

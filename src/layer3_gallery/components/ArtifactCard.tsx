@@ -21,7 +21,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
         type="button"
         onClick={() => onOpenStage(artifact)}
         className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center cursor-pointer outline-none"
-        title="点击进入全屏活体放映舞台"
+        title="点击进入全屏放映舞台"
       >
         <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted z-10 rounded">
           REV:{artifact.meta.currentRevision}
@@ -35,8 +35,8 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           />
         ) : (
           <div className="text-muted text-xs font-mono flex flex-col items-center gap-1">
-            <span>[ 待封印快照 ]</span>
-            <span className="text-[10px] opacity-60">点击放映并定格封面</span>
+            <span>[ 暂无封面 ]</span>
+            <span className="text-[10px] opacity-60">点击进入放映并截取封面</span>
           </div>
         )}
 

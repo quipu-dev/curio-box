@@ -100,34 +100,34 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const handleCheckoutRevision = async (targetRev: number) => {
     if (targetRev === artifact.meta.currentRevision) {
       setViewingSnapshot(null);
-      setStatusMessage(`已退出历史试映，回到当前最新底片 (REV:${targetRev})`);
+      setStatusMessage(`已退出历史预览，恢复至最新版本 (REV:${targetRev})`);
       return;
     }
 
     const content = await galleryStorage.loadNegativeRevision(artifact.meta.filename, targetRev);
     if (!content) {
-      setStatusMessage(`未能载入 REV:${targetRev} 的底片快照`);
+      setStatusMessage(`未能载入 REV:${targetRev} 的快照内容`);
       return;
     }
 
     setViewingSnapshot({ revision: targetRev, content });
-    setStatusMessage(`已安全检视 REV:${targetRev} 快照（内存试映中，未改动磁盘文件）`);
+    setStatusMessage(`正在只读预览 REV:${targetRev} 快照（未修改本地文件）`);
   };
 
   // 退出检视态，切回物理主版本
   const handleExitCheckout = () => {
     setViewingSnapshot(null);
-    setStatusMessage(`已退出检视态，恢复至最新主干底片 (REV:${artifact.meta.currentRevision})`);
+    setStatusMessage(`已退出版本检视，恢复至最新版本 (REV:${artifact.meta.currentRevision})`);
   };
 
   // 截屏定格快照
   const handleCapturePoster = async () => {
     if (!captureHandleRef.current) {
-      setStatusMessage('请等待沙箱装载完毕后再进行定格');
+      setStatusMessage('请等待沙箱加载完毕后再截图');
       return;
     }
     try {
-      setStatusMessage('正在定格无损封印快照...');
+      setStatusMessage('正在截取封面图...');
       const blob = await captureHandleRef.current();
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
@@ -135,10 +135,10 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
         posterBlobUrl: newUrl,
       };
       onUpdateArtifact(updated);
-      setStatusMessage('定格封印成功！封面已同步更新。');
+      setStatusMessage('封面更新成功！');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatusMessage(`定格失败: ${msg}`);
+      setStatusMessage(`截图失败: ${msg}`);
     }
   };
 
@@ -174,7 +174,7 @@ ${artifact.sourceCode}
     }
 
     if (viewingSnapshot) {
-      setStatusMessage('当前处于历史检视模式，请先【基于此版分叉】或【退出试映】后再应用补丁');
+      setStatusMessage('当前处于历史检视模式，请先【基于此版本修改】或【返回最新版本】');
       return;
     }
 
@@ -200,7 +200,7 @@ ${artifact.sourceCode}
         nextCode,
         nextRev,
         'patch',
-        'AI 差量注入应用',
+        '应用差量补丁',
       );
 
       const updatedMeta = {
@@ -218,7 +218,7 @@ ${artifact.sourceCode}
 
       onUpdateArtifact(updated);
       setPatchInput('');
-      setStatusMessage(`差量补丁已应用！底片链跃迁至 REV:${nextRev}`);
+      setStatusMessage(`补丁已成功应用！版本更新至 REV:${nextRev}`);
       await refreshHistory();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -234,7 +234,7 @@ ${artifact.sourceCode}
     );
 
     if (!historicalContent) {
-      setStatusMessage(`未找到 REV:${targetRev} 的物理底片快照`);
+      setStatusMessage(`未找到 REV:${targetRev} 的快照文件`);
       return;
     }
 
@@ -244,7 +244,7 @@ ${artifact.sourceCode}
       historicalContent,
       nextRev,
       'rollback',
-      `非破坏性还原自 REV:${targetRev}`,
+      `还原自版本 REV:${targetRev}`,
     );
 
     const updatedMeta = {
@@ -262,14 +262,14 @@ ${artifact.sourceCode}
 
     onUpdateArtifact(updated);
     setViewingSnapshot(null);
-    setStatusMessage(`安全还原成功：已将 REV:${targetRev} 映射并跃迁为 REV:${nextRev}`);
+    setStatusMessage(`已成功恢复 REV:${targetRev} 内容为新版本 REV:${nextRev}`);
     await refreshHistory();
   };
 
   // 手动一键预缓存外链资产
   const handleCacheAllAssets = async () => {
     if (!assetStats || assetStats.total === 0) return;
-    setStatusMessage('正在离线化下载所有外部 CDN 资源...');
+    setStatusMessage('正在下载并缓存外部资源...');
     for (const asset of assetStats.assets) {
       await AssetCacheEngine.cacheAsset(asset.url);
     }
@@ -283,7 +283,7 @@ ${artifact.sourceCode}
         status: results[i] ? 'cached' : 'failed',
       })),
     });
-    setStatusMessage('外链静态资源已全部注入本地持久缓存！');
+    setStatusMessage('外部资源已全部缓存至本地！');
   };
 
   return (
@@ -311,7 +311,7 @@ ${artifact.sourceCode}
             {viewingSnapshot ? (
               <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 animate-pulse">
                 <Eye className="w-3 h-3" />
-                <span>检视态: REV:{viewingSnapshot.revision}</span>
+                <span>检视中: REV:{viewingSnapshot.revision}</span>
               </span>
             ) : (
               <span className="bg-tag px-2 py-0.5 rounded text-[11px] font-semibold text-main border border-border">
@@ -382,7 +382,7 @@ ${artifact.sourceCode}
             }`}
           >
             {isActivated ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-            <span>{isActivated ? '湮灭' : '活体激活'}</span>
+            <span>{isActivated ? '暂停' : '运行'}</span>
           </button>
 
           <button
@@ -390,10 +390,10 @@ ${artifact.sourceCode}
             onClick={handleCapturePoster}
             disabled={!isActivated}
             className="flex items-center gap-1 border border-border px-2.5 py-1 rounded hover:bg-border disabled:opacity-40"
-            title="捕获当前帧为静态封面快照"
+            title="截取当前帧作为封面"
           >
             <Camera className="w-3.5 h-3.5 text-muted" />
-            <span className="hidden sm:inline">定格封印</span>
+            <span className="hidden sm:inline">截取封面</span>
           </button>
 
           <button
@@ -410,7 +410,7 @@ ${artifact.sourceCode}
             type="button"
             onClick={() => setIsConsoleOpen(!isConsoleOpen)}
             className="p-1.5 border border-border rounded hover:bg-border text-muted hover:text-main"
-            title={isConsoleOpen ? '收起暗房操作台 (大视口优先)' : '展开暗房操作台'}
+            title={isConsoleOpen ? '收起侧边面板' : '展开侧边面板'}
           >
             {isConsoleOpen ? (
               <PanelRightClose className="w-3.5 h-3.5" />
@@ -429,9 +429,9 @@ ${artifact.sourceCode}
             <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-zinc-950/90 border border-amber-500/50 backdrop-blur-md px-4 py-2 rounded-full text-xs font-mono text-zinc-200 shadow-2xl animate-in fade-in slide-in-from-top-2">
               <span className="inline-flex items-center gap-1.5 text-amber-400 font-semibold">
                 <Eye className="w-3.5 h-3.5 animate-pulse" />
-                <span>检视漫游中 · REV:{viewingSnapshot.revision}</span>
+                <span>历史检视中 · REV:{viewingSnapshot.revision}</span>
               </span>
-              <span className="text-zinc-500 text-[11px]">(沙箱只读试映)</span>
+              <span className="text-zinc-500 text-[11px]">(只读预览)</span>
 
               <div className="w-px h-3.5 bg-zinc-700" />
 
@@ -439,17 +439,17 @@ ${artifact.sourceCode}
                 type="button"
                 onClick={() => handleRestoreRevision(viewingSnapshot.revision)}
                 className="flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-full transition-colors text-[11px]"
-                title="以此历史底片为起点分叉生成新的一轮修订"
+                title="以此历史快照为基准恢复修改"
               >
                 <GitBranch className="w-3 h-3" />
-                <span>基于此版分叉继续</span>
+                <span>基于此版本修改</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleExitCheckout}
                 className="flex items-center gap-1 text-zinc-400 hover:text-white transition-colors text-[11px] px-1.5"
-                title="退出试映并回到物理主版本"
+                title="退出预览并回到最新版本"
               >
                 <EyeOff className="w-3 h-3" />
                 <span>返回最新</span>
@@ -480,7 +480,7 @@ ${artifact.sourceCode}
                 }`}
               >
                 <Code2 className="w-3.5 h-3.5 text-sky-400" />
-                <span>AI 差量注入</span>
+                <span>AI 差量补丁</span>
               </button>
               <button
                 type="button"
@@ -492,7 +492,7 @@ ${artifact.sourceCode}
                 }`}
               >
                 <History className="w-3.5 h-3.5 text-amber-400" />
-                <span>底片链历史</span>
+                <span>版本历史</span>
               </button>
               <button
                 type="button"
@@ -504,7 +504,7 @@ ${artifact.sourceCode}
                 }`}
               >
                 <Database className="w-3.5 h-3.5 text-emerald-400" />
-                <span>标本与缓存</span>
+                <span>标签与资源</span>
               </button>
             </div>
 
@@ -515,11 +515,10 @@ ${artifact.sourceCode}
                     <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded flex flex-col gap-2.5 text-amber-300">
                       <div className="flex items-center gap-2 font-semibold text-xs">
                         <Eye className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>当前处于 REV:{viewingSnapshot.revision} 历史检视态</span>
+                        <span>当前正在检视历史版本 REV:{viewingSnapshot.revision}</span>
                       </div>
                       <p className="text-[11px] text-zinc-300 leading-relaxed">
-                        为防止代码基准冲突，历史检视态下 AI
-                        差量补丁已自动锁定。您可以基于当前快照生成新分支，或返回最新物理版本。
+                        为防止代码冲突，检视历史版本时补丁功能已锁定。您可以基于此版本继续修改，或返回最新版本。
                       </p>
                       <div className="flex gap-2 mt-1">
                         <button
@@ -528,7 +527,7 @@ ${artifact.sourceCode}
                           className="flex-1 bg-amber-500/20 border border-amber-500/40 text-amber-200 py-2 rounded text-xs hover:bg-amber-500/30 transition-colors flex items-center justify-center gap-1.5"
                         >
                           <GitBranch className="w-3.5 h-3.5" />
-                          <span>基于此版分叉继续创作</span>
+                          <span>基于此版本继续修改</span>
                         </button>
                         <button
                           type="button"
@@ -581,7 +580,7 @@ patch_file
                           onClick={handleApplyPatch}
                           className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 transition-opacity"
                         >
-                          应用差量补丁并推入底片链 (REV:{artifact.meta.currentRevision + 1})
+                          应用差量补丁 (升级至 REV:{artifact.meta.currentRevision + 1})
                         </button>
                       </div>
                     </>
@@ -593,7 +592,7 @@ patch_file
                 <div className="flex flex-col gap-3">
                   <div className="bg-background border border-border p-3 rounded">
                     <div className="text-[10px] uppercase text-muted tracking-wider mb-1">
-                      物理主干底片锚点 (HEAD)
+                      当前最新版本 (HEAD)
                     </div>
                     <div className="text-sm font-bold text-main">
                       REV:{artifact.meta.currentRevision}
@@ -605,14 +604,14 @@ patch_file
 
                   <div className="text-muted text-[11px] leading-relaxed">
                     点击 <span className="text-sky-400 font-semibold">检视 (Checkout)</span>{' '}
-                    可在沙箱中只读运行任意历史底片（零磁盘开销）；点击{' '}
-                    <span className="text-amber-400 font-semibold">安全还原</span>{' '}
-                    可将历史底片作为新的一轮修订前向推入。
+                    可在沙箱中只读预览历史版本；点击{' '}
+                    <span className="text-amber-400 font-semibold">还原</span>{' '}
+                    可将历史版本内容作为新版本提交。
                   </div>
 
                   <div className="flex flex-col gap-2 mt-2">
                     <div className="text-[10px] uppercase text-muted tracking-wider">
-                      底片快照胶卷（{historyLedger.length} 个锚点）
+                      版本快照记录（{historyLedger.length} 个记录）
                     </div>
 
                     <div className="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
@@ -636,12 +635,12 @@ patch_file
                                 <span className="font-bold font-mono">REV:{item.revision}</span>
                                 {item.action === 'genesis' && (
                                   <span className="text-[10px] bg-sky-500/20 text-sky-400 px-1.5 py-0.2 rounded border border-sky-500/30">
-                                    创世底片
+                                    初始版本
                                   </span>
                                 )}
                                 {item.action === 'rollback' && (
                                   <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.2 rounded border border-purple-500/30">
-                                    还原锚点
+                                    还原版本
                                   </span>
                                 )}
                                 {isPhysicalHead && (
@@ -651,7 +650,7 @@ patch_file
                                 )}
                                 {isCurrentlyViewing && (
                                   <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded">
-                                    当前视口
+                                    当前预览
                                   </span>
                                 )}
                               </div>
@@ -669,11 +668,11 @@ patch_file
                                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                                     : 'border-border text-muted hover:text-main hover:bg-border'
                                 }`}
-                                title="在沙箱中只读检视该版本运行效果 (零磁盘改动)"
+                                title="在沙箱中只读预览该版本"
                               >
                                 <Eye className="w-3 h-3 text-sky-400" />
                                 <span>
-                                  {viewingSnapshot?.revision === item.revision ? '试映中' : '检视'}
+                                  {viewingSnapshot?.revision === item.revision ? '预览中' : '检视'}
                                 </span>
                               </button>
 
@@ -701,7 +700,7 @@ patch_file
                 <div className="flex flex-col gap-3">
                   <div className="bg-background border border-border p-3 rounded">
                     <div className="text-[10px] uppercase text-muted tracking-wider mb-2">
-                      工件标本分类与标签
+                      工件分类与标签
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {artifact.meta.tags.map((rawTag) => {
@@ -725,7 +724,7 @@ patch_file
                   <div className="bg-background border border-border p-3 rounded flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase text-muted tracking-wider">
-                        外部 CDN 依赖与本地保鲜池
+                        外部资源与本地缓存
                       </span>
                       {assetStats && (
                         <span className="text-[11px] font-semibold text-sky-400">
@@ -756,9 +755,7 @@ patch_file
                         ))}
                       </div>
                     ) : (
-                      <div className="text-muted text-[11px]">
-                        未探测到外部 CDN 依赖（纯原生工件）
-                      </div>
+                      <div className="text-muted text-[11px]">未引用外部 CDN 资源</div>
                     )}
 
                     {assetStats && assetStats.cached < assetStats.total && (
@@ -768,7 +765,7 @@ patch_file
                         className="w-full mt-2 bg-sky-500/20 border border-sky-500/40 text-sky-300 py-1.5 rounded text-xs hover:bg-sky-500/30 transition-colors flex items-center justify-center gap-1.5"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>一键全量持久化至本地 Cache</span>
+                        <span>一键缓存全部外部资源</span>
                       </button>
                     )}
                   </div>

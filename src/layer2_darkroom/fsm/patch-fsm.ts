@@ -152,7 +152,7 @@ export const DarkroomApplier = {
       const normalizedNew = command.newDoc.replace(/\r\n/g, '\n');
 
       if (!normalizedSource.includes(normalizedOld)) {
-        throw new Error('【暗房冲突】目标底片未匹配到 old_doc 指定的内容，拒绝应用补丁。');
+        throw new Error('【补丁冲突】目标代码未匹配到 old_doc 指定的内容，无法应用补丁。');
       }
 
       return normalizedSource.replace(normalizedOld, normalizedNew);

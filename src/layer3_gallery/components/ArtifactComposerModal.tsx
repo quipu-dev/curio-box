@@ -121,7 +121,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setErrorMsg(`固化失败: ${msg}`);
+      setErrorMsg(`保存失败: ${msg}`);
       setIsSaving(false);
     }
   };
@@ -136,11 +136,9 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <div className="font-bold text-sm font-sans tracking-wide">
-                工件装配台 (Artifact Composer)
-              </div>
+              <div className="font-bold text-sm font-sans tracking-wide">工件编辑器</div>
               <div className="text-[11px] text-muted">
-                编辑源码并即时试映，落盘时自动建立创世底片
+                实时预览并编辑源码，保存时自动记录初始版本 (REV:1)
               </div>
             </div>
           </div>
@@ -150,10 +148,10 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               type="button"
               onClick={() => setShowPreview((prev) => !prev)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded hover:bg-surface transition-colors text-muted hover:text-main text-[11px]"
-              title="折叠/展开实时沙箱画幅"
+              title="折叠/展开实时预览"
             >
               {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span>{showPreview ? '隐藏画幅' : '开启画幅'}</span>
+              <span>{showPreview ? '隐藏预览' : '显示预览'}</span>
             </button>
 
             <button
@@ -163,7 +161,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               className="flex items-center gap-1.5 bg-main text-surface px-4 py-1.5 rounded font-semibold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? '正在固化...' : '固化入库 (REV:1)'}</span>
+              <span>{isSaving ? '正在保存...' : '保存工件 (REV:1)'}</span>
             </button>
 
             <button
@@ -185,14 +183,14 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
             >
               <FileCode className="w-3 h-3 text-sky-400" />
-              <span>工件标本名称</span>
+              <span>工件名称</span>
             </label>
             <input
               id="composer-artifact-name"
               type="text"
               value={artifactName}
               onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="输入标本展示名..."
+              placeholder="输入工件名称..."
               className="bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-sky-400 font-sans"
             />
           </div>
@@ -203,7 +201,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
             >
               <Layers className="w-3 h-3 text-amber-400" />
-              <span>物理保存文件名 (.html)</span>
+              <span>保存文件名 (.html)</span>
             </label>
             <input
               id="composer-filename"
@@ -221,7 +219,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
             >
               <TagIcon className="w-3 h-3 text-emerald-400" />
-              <span>大众分类标签 (空格分隔)</span>
+              <span>分类标签 (空格分隔)</span>
             </label>
             <input
               id="composer-tags"
@@ -285,9 +283,9 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex items-center justify-between text-[11px] font-mono text-zinc-400 shrink-0">
                 <span className="flex items-center gap-1.5 text-emerald-400">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>实时渲染沙箱视口</span>
+                  <span>实时预览</span>
                 </span>
-                <span className="text-[10px] text-zinc-500">代码变动即时热载</span>
+                <span className="text-[10px] text-zinc-500">代码变动即时更新</span>
               </div>
 
               <div className="flex-1 relative p-3 flex items-center justify-center overflow-hidden">

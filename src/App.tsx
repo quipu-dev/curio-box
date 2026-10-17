@@ -39,6 +39,12 @@ function MainApp() {
     handleSortChange,
     cardSize,
     handleCardSizeChange,
+    filterNeedsPoster,
+    setFilterNeedsPoster,
+    needsPosterCount,
+    filterUnclassified,
+    setFilterUnclassified,
+    unclassifiedCount,
     sortedArtifacts,
     displayGroups,
     gridStyle,
@@ -480,6 +486,12 @@ function MainApp() {
           hasDirectory={hasDirectory}
           sortBy={sortBy}
           onSortChange={handleSortChange}
+          filterNeedsPoster={filterNeedsPoster}
+          onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
+          needsPosterCount={needsPosterCount}
+          filterUnclassified={filterUnclassified}
+          onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
+          unclassifiedCount={unclassifiedCount}
         />
 
         {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
@@ -525,7 +537,13 @@ function MainApp() {
         ) : (
           <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
             <span>未匹配到符合检索条件的工件</span>
-            <span className="text-xs opacity-60">尝试修改筛选词或清除过滤条件</span>
+            <span className="text-xs opacity-60">
+              {filterNeedsPoster
+                ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
+                : filterUnclassified
+                  ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
+                  : '尝试修改筛选词或清除过滤条件'}
+            </span>
           </div>
         )}
       </main>

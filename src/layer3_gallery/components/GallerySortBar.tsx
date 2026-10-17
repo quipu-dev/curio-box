@@ -1,5 +1,5 @@
 import type { SortOption } from '@/layer3_gallery/hooks/useArtifactSortAndGroup';
-import { ArrowDownUp, Star } from 'lucide-react';
+import { ArrowDownUp, Camera, Star, Tag } from 'lucide-react';
 import type React from 'react';
 
 interface GallerySortBarProps {
@@ -8,6 +8,12 @@ interface GallerySortBarProps {
   hasDirectory: boolean;
   sortBy: SortOption;
   onSortChange: (sort: SortOption) => void;
+  filterNeedsPoster: boolean;
+  onToggleNeedsPoster: () => void;
+  needsPosterCount: number;
+  filterUnclassified: boolean;
+  onToggleUnclassified: () => void;
+  unclassifiedCount: number;
 }
 
 export const GallerySortBar: React.FC<GallerySortBarProps> = ({
@@ -16,14 +22,73 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
   hasDirectory,
   sortBy,
   onSortChange,
+  filterNeedsPoster,
+  onToggleNeedsPoster,
+  needsPosterCount,
+  filterUnclassified,
+  onToggleUnclassified,
+  unclassifiedCount,
 }) => {
   return (
     <div className="mb-6 flex flex-wrap gap-3 justify-between items-center text-xs font-mono text-muted">
-      <div className="flex items-center gap-2">
-        <span>工件总数：</span>
-        <span className="text-main font-semibold">{matchedCount}</span>
-        <span>/</span>
-        <span>{totalCount}</span>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span>工件数：</span>
+          <span className="text-main font-semibold">{matchedCount}</span>
+          <span>/</span>
+          <span>{totalCount}</span>
+        </div>
+
+        <div className="h-3 w-px bg-border mx-1" />
+
+        {/* 智能快捷视图：待定格筛选胶囊 */}
+        <button
+          type="button"
+          onClick={onToggleNeedsPoster}
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors border ${
+            filterNeedsPoster
+              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-medium'
+              : 'bg-surface border-border text-muted hover:text-main hover:border-zinc-600'
+          }`}
+          title={filterNeedsPoster ? '显示全部工件' : '仅显示未截取封面的待定格工件'}
+        >
+          <Camera className="w-3 h-3 text-amber-400" />
+          <span>待定格</span>
+          {needsPosterCount > 0 && (
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono leading-none ${
+                filterNeedsPoster ? 'bg-amber-500/30 text-amber-200' : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {needsPosterCount}
+            </span>
+          )}
+        </button>
+
+        {/* 智能快捷视图：未分类筛选胶囊 */}
+        <button
+          type="button"
+          onClick={onToggleUnclassified}
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors border ${
+            filterUnclassified
+              ? 'bg-sky-500/20 border-sky-500/50 text-sky-300 font-medium'
+              : 'bg-surface border-border text-muted hover:text-main hover:border-zinc-600'
+          }`}
+          title={filterUnclassified ? '显示全部工件' : '仅显示待分类或未打标签的工件'}
+        >
+          <Tag className="w-3 h-3 text-sky-400" />
+          <span>未分类</span>
+          {unclassifiedCount > 0 && (
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono leading-none ${
+                filterUnclassified ? 'bg-sky-500/30 text-sky-200' : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {unclassifiedCount}
+            </span>
+          )}
+        </button>
+
         {!hasDirectory && (
           <span className="hidden sm:inline opacity-70">
             （当前为演示模式，可点击右上角关联本地目录）

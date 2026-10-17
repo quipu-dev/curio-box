@@ -29,6 +29,18 @@ export function formatRatingGroupKey(rating?: number): string {
   return `${rating} 星精选`;
 }
 
+/**
+ * 判定工件是否处于未分类状态：
+ * 1. 没有任何标签
+ * 2. 显式带有包含“未分类”的标签
+ * 3. 仅保留系统默认形态/新建占位标签，尚未添加具体领域或业务标签
+ */
+export function isArtifactUnclassified(tags: string[]): boolean {
+  if (tags.length === 0) return true;
+  if (tags.some((t) => t.toLowerCase().includes('未分类'))) return true;
+  return tags.every((t) => t.startsWith('形态:') || t === '状态:新建');
+}
+
 export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: string) {
   // 排序方式
   const [sortBy, setSortBy] = useState<SortOption>(() => {
@@ -59,10 +71,33 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     } catch {}
   };
 
-  // 1. 过滤匹配
+  // 待定格（缺失封面）过滤状态
+  const [filterNeedsPoster, setFilterNeedsPoster] = useState<boolean>(false);
+  // 未分类（待归档打标）过滤状态
+  const [filterUnclassified, setFilterUnclassified] = useState<boolean>(false);
+
+  // 统计当前全局缺失海报封面的工件数
+  const needsPosterCount = useMemo(() => {
+    return artifacts.filter((a) => !a.posterBlobUrl).length;
+  }, [artifacts]);
+
+  // 统计当前全局未分类的工件数
+  const unclassifiedCount = useMemo(() => {
+    return artifacts.filter((a) => isArtifactUnclassified(a.meta.tags)).length;
+  }, [artifacts]);
+
+  // 1. 过滤匹配（同时支持标签搜索、待定格与未分类状态筛选叠加）
   const filteredArtifacts = useMemo(() => {
-    return artifacts.filter((item) => TagQueryEngine.match(item.meta.tags, searchQuery));
-  }, [artifacts, searchQuery]);
+    return artifacts.filter((item) => {
+      if (filterNeedsPoster && item.posterBlobUrl) {
+        return false;
+      }
+      if (filterUnclassified && !isArtifactUnclassified(item.meta.tags)) {
+        return false;
+      }
+      return TagQueryEngine.match(item.meta.tags, searchQuery);
+    });
+  }, [artifacts, searchQuery, filterNeedsPoster, filterUnclassified]);
 
   // 2. 依据当前排序选项进行确定性排序
   const sortedArtifacts = useMemo(() => {
@@ -176,6 +211,12 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     handleSortChange,
     cardSize,
     handleCardSizeChange,
+    filterNeedsPoster,
+    setFilterNeedsPoster,
+    needsPosterCount,
+    filterUnclassified,
+    setFilterUnclassified,
+    unclassifiedCount,
     filteredArtifacts,
     sortedArtifacts,
     displayGroups,

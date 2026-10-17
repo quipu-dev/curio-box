@@ -16,6 +16,7 @@ import {
   FileCode,
   HardDrive,
   Layers,
+  Loader2,
   MessageSquareQuote,
   Plus,
   Save,
@@ -66,9 +67,11 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [newTagInput, setNewTagInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [editName, setEditName] = useState(artifact.meta.name);
   const [editDesc, setEditDesc] = useState(artifact.meta.description || '');
   const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [isSavingDesc, setIsSavingDesc] = useState(false);
   const [showCodePreview, setShowCodePreview] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
 
@@ -76,8 +79,10 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   useEffect(() => {
     setEditName(artifact.meta.name);
     setIsEditingName(false);
+    setIsRenaming(false);
     setEditDesc(artifact.meta.description || '');
     setIsEditingDesc(false);
+    setIsSavingDesc(false);
   }, [artifact.meta.name, artifact.meta.description]);
 
   // 异步按需加载源码
@@ -97,10 +102,10 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     };
   }, [artifact.meta.filename, artifact.sourceCode]);
 
-  // 评分交互
-  const handleRatingClick = async (star: number) => {
+  // 评分交互（由底层提供乐观更新，毫秒级响应）
+  const handleRatingClick = (star: number) => {
     const nextRating = artifact.meta.rating === star ? 0 : star;
-    await onUpdateRating(artifact.meta.filename, nextRating);
+    onUpdateRating(artifact.meta.filename, nextRating);
     toast.success(nextRating > 0 ? `已将评分更新为 ${nextRating} 星` : '已清除星级评分');
   };
 
@@ -122,9 +127,9 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
     if (addedCount > 0) {
       const nextTags = Array.from(existingSet);
+      setNewTagInput('');
       await onUpdateTags(artifact.meta.filename, nextTags);
       toast.success(`已添加 ${addedCount} 个新标签`);
-      setNewTagInput('');
     } else {
       toast.info('标签已存在');
       setNewTagInput('');
@@ -146,7 +151,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 保存重命名
+  // 保存重命名（带主线程让步与状态机锁）
   const handleSaveRename = async () => {
     const trimmed = editName.trim();
     if (!trimmed) {
@@ -164,26 +169,38 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
       return;
     }
 
-    try {
-      await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
-      setIsEditingName(false);
-      toast.success('工件重命名成功');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`重命名失败: ${msg}`);
-    }
+    setIsRenaming(true);
+
+    // 微任务让步，确保加载态立即渲染
+    setTimeout(async () => {
+      try {
+        await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
+        setIsEditingName(false);
+        toast.success('工件重命名成功');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`重命名失败: ${msg}`);
+      } finally {
+        setIsRenaming(false);
+      }
+    }, 20);
   };
 
   // 保存研判描述
   const handleSaveDescription = async () => {
-    try {
-      await onUpdateDescription(artifact.meta.filename, editDesc);
-      setIsEditingDesc(false);
-      toast.success('工件研判描述已更新');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`更新描述失败: ${msg}`);
-    }
+    setIsSavingDesc(true);
+    setTimeout(async () => {
+      try {
+        await onUpdateDescription(artifact.meta.filename, editDesc);
+        setIsEditingDesc(false);
+        toast.success('工件研判描述已更新');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`更新描述失败: ${msg}`);
+      } finally {
+        setIsSavingDesc(false);
+      }
+    }, 20);
   };
 
   // 删除确认
@@ -223,7 +240,6 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* 上一件 / 下一件切页器 */}
           {(onPrev || onNext) && (
             <div className="flex items-center border border-border rounded overflow-hidden mr-1">
               <button
@@ -280,13 +296,14 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
       {/* 核心检视内容 */}
       <div className="flex-1 p-4 md:p-5 flex flex-col gap-4 overflow-y-auto font-mono text-xs">
-        {/* 名称与评分 */}
+        {/* 名称与评分卡片 */}
         <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-3">
           <div className="flex-1 min-w-0">
             {isEditingName ? (
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  disabled={isRenaming}
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   onKeyDown={(e) => {
@@ -294,19 +311,28 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
                     if (e.key === 'Escape') setIsEditingName(false);
                   }}
                   placeholder="工件名称"
-                  className="bg-surface border border-sky-400 px-2.5 py-1 rounded text-sm text-main outline-none font-sans font-semibold flex-1"
+                  className="bg-surface border border-sky-400 px-2.5 py-1 rounded text-sm text-main outline-none font-sans font-semibold flex-1 disabled:opacity-50"
                 />
                 <button
                   type="button"
+                  disabled={isRenaming}
                   onClick={handleSaveRename}
-                  className="px-2.5 py-1 bg-sky-500 text-black font-semibold rounded text-xs hover:opacity-90 transition-opacity"
+                  className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 text-black font-semibold rounded text-xs hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
                 >
-                  保存
+                  {isRenaming ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>保存中</span>
+                    </>
+                  ) : (
+                    <span>保存</span>
+                  )}
                 </button>
                 <button
                   type="button"
+                  disabled={isRenaming}
                   onClick={() => setIsEditingName(false)}
-                  className="px-2 py-1 text-muted hover:text-main text-xs transition-colors"
+                  className="px-2 py-1 text-muted hover:text-main text-xs transition-colors shrink-0 disabled:opacity-50"
                 >
                   取消
                 </button>
@@ -331,7 +357,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
             )}
           </div>
 
-          {/* 1-5 星级评分交互 */}
+          {/* 1-5 星级评分交互（瞬时响应） */}
           <div className="flex items-center justify-between bg-surface px-3 py-1.5 rounded border border-border">
             <span className="text-[10px] uppercase text-muted tracking-wider">工件评级</span>
             <div className="flex items-center gap-1">
@@ -344,7 +370,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
                   title={`${star} 星`}
                 >
                   <Star
-                    className={`w-4 h-4 ${
+                    className={`w-4 h-4 transition-colors ${
                       star <= (artifact.meta.rating || 0)
                         ? 'fill-amber-400 text-amber-400'
                         : 'text-zinc-600 hover:text-amber-300'
@@ -356,7 +382,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           </div>
         </div>
 
-        {/* 研判笔记与描述区块 */}
+        {/* 研判备忘区块 */}
         <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-2.5">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
@@ -368,19 +394,25 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
+                  disabled={isSavingDesc}
                   onClick={handleSaveDescription}
-                  className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[11px] hover:opacity-90 transition-opacity"
+                  className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[11px] hover:opacity-90 disabled:opacity-50 transition-opacity"
                 >
-                  <Save className="w-3 h-3" />
-                  <span>保存</span>
+                  {isSavingDesc ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Save className="w-3 h-3" />
+                  )}
+                  <span>{isSavingDesc ? '保存中' : '保存'}</span>
                 </button>
                 <button
                   type="button"
+                  disabled={isSavingDesc}
                   onClick={() => {
                     setEditDesc(artifact.meta.description || '');
                     setIsEditingDesc(false);
                   }}
-                  className="px-1.5 py-0.5 text-muted hover:text-main text-[11px] transition-colors"
+                  className="px-1.5 py-0.5 text-muted hover:text-main text-[11px] transition-colors disabled:opacity-50"
                 >
                   取消
                 </button>
@@ -399,11 +431,12 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
           {isEditingDesc ? (
             <textarea
+              disabled={isSavingDesc}
               value={editDesc}
               onChange={(e) => setEditDesc(e.target.value)}
-              placeholder="记录工件特点、亮点与不足（如：流体粒子仿真流畅，但字幕排版粗糙）..."
+              placeholder="记录工件特点、亮点与不足..."
               rows={3}
-              className="w-full bg-surface border border-sky-400 p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none"
+              className="w-full bg-surface border border-sky-400 p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none disabled:opacity-50"
             />
           ) : artifact.meta.description ? (
             <button

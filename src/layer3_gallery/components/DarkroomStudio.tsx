@@ -1,10 +1,11 @@
 import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
-import { DarkroomApplier, DarkroomPatchFSM } from '@/layer2_darkroom/fsm/patch-fsm';
+import { DarkroomPatchFSM, type PatchSimulationResult } from '@/layer2_darkroom/fsm/patch-fsm';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { DarkroomAssetsTab } from '@/layer3_gallery/components/studio/DarkroomAssetsTab';
 import { DarkroomCheckoutHud } from '@/layer3_gallery/components/studio/DarkroomCheckoutHud';
+import { DarkroomDiffModal } from '@/layer3_gallery/components/studio/DarkroomDiffModal';
 import { DarkroomHistoryTab } from '@/layer3_gallery/components/studio/DarkroomHistoryTab';
 import { DarkroomPatchTab } from '@/layer3_gallery/components/studio/DarkroomPatchTab';
 import { DarkroomStudioHeader } from '@/layer3_gallery/components/studio/DarkroomStudioHeader';
@@ -45,7 +46,12 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [assetStats, setAssetStats] = useState<AssetCacheStats | null>(null);
   const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
 
-  // 游离检视快照（Checkout 模式：只读沙箱试映，不污染物理磁盘）
+  // 预演与审核状态
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [isCommitting, setIsCommitting] = useState<boolean>(false);
+  const [pendingSimulation, setPendingSimulation] = useState<PatchSimulationResult | null>(null);
+
+  // 游离检视快照 (Checkout)
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshotState | null>(null);
   const [loadedSourceCode, setLoadedSourceCode] = useState<string>(artifact.sourceCode || '');
 
@@ -69,12 +75,10 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     };
   }, [artifact, onUpdateArtifact]);
 
-  // 派生当前视口渲染的代码 payload
   const activeSourceCode = useMemo(() => {
     return viewingSnapshot ? viewingSnapshot.content : loadedSourceCode;
   }, [viewingSnapshot, loadedSourceCode]);
 
-  // 加载底片链历史清单
   const refreshHistory = useCallback(async () => {
     const list = await galleryStorage.listNegativeRevisions(artifact.meta.id);
     setHistoryLedger(list);
@@ -84,7 +88,6 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     refreshHistory();
   }, [refreshHistory]);
 
-  // 挂载或视口代码变更时自动探查外部 CDN 资源
   useEffect(() => {
     const assets = AssetCacheEngine.detectExternalAssets(activeSourceCode);
     Promise.all(assets.map((a) => AssetCacheEngine.isCached(a.url))).then((results) => {
@@ -100,7 +103,6 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     });
   }, [activeSourceCode]);
 
-  // 检视特定历史底片 (Checkout)
   const handleCheckoutRevision = async (targetRev: number) => {
     if (targetRev === artifact.meta.currentRevision) {
       setViewingSnapshot(null);
@@ -118,13 +120,11 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     toast.info(`正在只读预览 REV:${targetRev} 快照`);
   };
 
-  // 退出检视态，切回物理主版本
   const handleExitCheckout = () => {
     setViewingSnapshot(null);
     toast.info(`已退出版本检视，恢复至最新版本 (REV:${artifact.meta.currentRevision})`);
   };
 
-  // 截屏定格快照
   const handleCapturePoster = async () => {
     if (!captureHandleRef.current) {
       toast.warn('请等待沙箱加载完毕后再截图');
@@ -145,29 +145,55 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     }
   };
 
-  // 复制带格式的完整提示词上下文
+  // 复制带现有标签、描述以及完整规范的大模型提示词上下文
   const handleCopyPromptContext = () => {
-    const prompt = `请针对以下工件代码提供修改指令。请严格遵循 act 指令协议输出，示例如下：
+    const currentTagsText =
+      artifact.meta.tags.length > 0 ? artifact.meta.tags.join(' ') : '（暂无自定义标签）';
+    const currentDescText = artifact.meta.description
+      ? artifact.meta.description
+      : '（暂无研判备忘）';
 
+    const prompt = `请针对以下工件代码提供修改指令。请严格遵循 act 指令协议输出。
+
+【当前工件已有标签】
+${currentTagsText}
+
+【当前工件研判备忘】
+${currentDescText}
+
+【指令系统支持的操作规范】
+
+1. 差量局部修改 (patch_file) - 适用于局部调整、修复 Bug 或修改参数：
 \`\`\`act
 patch_file
 \`\`\`
 \`\`\`old_doc
-<需要被替换的精确原代码行>
+<必须在当前源码中完全一字不差匹配的原代码行>
 \`\`\`
 \`\`\`new_doc
 <替换后的新代码行>
 \`\`\`
 
-如需为工件记录研判备忘（如总结工件优缺点、改动要点），可附带 set_description 指令：
+2. 全量源码覆写 (write_file) - 适用于大幅重构、替换主逻辑或换用架构：
+\`\`\`act
+write_file
+\`\`\`
+\`\`\`html
+<!DOCTYPE html>
+<html>
+...完整的单文件工件源码...
+</html>
+\`\`\`
+
+3. 记录研判备忘 (set_description)（可选）：
 \`\`\`act
 set_description
 \`\`\`
 \`\`\`
-动画视觉呈现极佳，但存在控制台报错或排版问题。
+动画视觉呈现极佳，已优化流体阻尼系数。
 \`\`\`
 
-如需为工件补充或调整标签，可附带 add_tag 指令（支持空格或换行分隔标签）：
+4. 追加或移除标签 (add_tag / remove_tag)（可选）：
 \`\`\`act
 add_tag
 \`\`\`
@@ -175,18 +201,18 @@ add_tag
 领域:图形学 物理:粒子系统
 \`\`\`
 
-当前工件【${artifact.meta.name}】源码：
+当前工件【${artifact.meta.name}】(REV:${artifact.meta.currentRevision}) 源码：
 \`\`\`html
-${artifact.sourceCode}
+${loadedSourceCode}
 \`\`\``;
 
     navigator.clipboard.writeText(prompt);
     setCopied(true);
-    toast.success('已复制大模型提示词上下文！');
+    toast.success('已复制完整提示词上下文（含标签与描述）！');
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 应用 FSM 差量补丁
+  // 第一步：解析与沙箱预演模拟（任意一条失败立即阻断）
   const handleApplyPatch = async () => {
     if (!patchInput.trim()) {
       toast.warn('请粘贴包含 act 指令的补丁文本');
@@ -198,87 +224,100 @@ ${artifact.sourceCode}
       return;
     }
 
-    try {
-      const baseCode = activeSourceCode;
-      await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
+    setIsSimulating(true);
 
-      const fsm = new DarkroomPatchFSM();
-      const commands = fsm.parse(patchInput);
+    // 主线程让步，让 UI 能够即时渲染“正在校验...”反馈
+    setTimeout(async () => {
+      try {
+        const baseCode = activeSourceCode;
+        const fsm = new DarkroomPatchFSM();
+        const commands = fsm.parse(patchInput);
 
-      if (commands.length === 0) {
-        throw new Error('未能识别到有效的补丁指令块，请检查围栏语法');
-      }
-
-      let nextCode = baseCode;
-      let nextTags = [...artifact.meta.tags];
-      let nextDesc = artifact.meta.description;
-      let hasCodeChange = false;
-      let hasTagChange = false;
-      let hasDescChange = false;
-
-      for (const cmd of commands) {
-        if (cmd.action === 'patch_file' || cmd.action === 'write_file') {
-          nextCode = DarkroomApplier.apply(nextCode, cmd);
-          hasCodeChange = true;
-        } else if (cmd.action === 'add_tag' || cmd.action === 'remove_tag') {
-          nextTags = DarkroomApplier.applyTags(nextTags, cmd);
-          hasTagChange = true;
-        } else if (cmd.action === 'set_description') {
-          nextDesc = cmd.description ?? '';
-          hasDescChange = true;
-        }
-      }
-
-      setLoadedSourceCode(nextCode);
-
-      const nextRev = hasCodeChange
-        ? artifact.meta.currentRevision + 1
-        : artifact.meta.currentRevision;
-
-      if (hasCodeChange) {
-        await galleryStorage.saveArtifactSource(
-          artifact.meta.filename,
-          artifact.meta.id,
-          nextCode,
-          nextRev,
-          'patch',
-          '应用差量补丁',
+        // 使用 DarkroomApplier.simulate 统一预演
+        const { DarkroomApplier } = await import('@/layer2_darkroom/fsm/patch-fsm');
+        const simResult = DarkroomApplier.simulate(
+          baseCode,
+          artifact.meta.tags,
+          artifact.meta.description,
+          commands,
         );
+
+        setPendingSimulation(simResult);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`预演失败，操作已阻断: ${msg}`);
+      } finally {
+        setIsSimulating(false);
       }
-
-      const updatedMeta = {
-        ...artifact.meta,
-        tags: nextTags,
-        description: nextDesc,
-        currentRevision: nextRev,
-        updatedAt: new Date().toISOString(),
-      };
-      await galleryStorage.saveMeta(updatedMeta);
-
-      const updated: Artifact = {
-        ...artifact,
-        sourceCode: nextCode,
-        meta: updatedMeta,
-      };
-
-      onUpdateArtifact(updated);
-      setPatchInput('');
-      const changeSummaries: string[] = [];
-      if (hasCodeChange) changeSummaries.push(`升级至 REV:${nextRev}`);
-      if (hasTagChange) changeSummaries.push('标签已更新');
-      if (hasDescChange) changeSummaries.push('研判备忘已写入');
-
-      toast.success(
-        changeSummaries.length > 0 ? `指令已执行：${changeSummaries.join(' · ')}` : '指令执行完毕',
-      );
-      await refreshHistory();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`执行失败: ${msg}`);
-    }
+    }, 20);
   };
 
-  // 非破坏性安全还原至指定历史底片
+  // 第二步：用户在 Diff 审核界面确认后，真正写入磁盘并创建快照
+  const handleConfirmSimulation = async () => {
+    if (!pendingSimulation) return;
+    setIsCommitting(true);
+
+    setTimeout(async () => {
+      try {
+        const baseCode = activeSourceCode;
+        await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
+
+        const hasCodeChange = pendingSimulation.hasCodeChange;
+        const nextCode = pendingSimulation.nextCode;
+        const nextTags = pendingSimulation.nextTags;
+        const nextDesc = pendingSimulation.nextDescription;
+
+        const nextRev = hasCodeChange
+          ? artifact.meta.currentRevision + 1
+          : artifact.meta.currentRevision;
+
+        if (hasCodeChange) {
+          await galleryStorage.saveArtifactSource(
+            artifact.meta.filename,
+            artifact.meta.id,
+            nextCode,
+            nextRev,
+            'patch',
+            '应用审核通过的补丁',
+          );
+        }
+
+        const updatedMeta = {
+          ...artifact.meta,
+          tags: nextTags,
+          description: nextDesc,
+          currentRevision: nextRev,
+          updatedAt: new Date().toISOString(),
+        };
+        await galleryStorage.saveMeta(updatedMeta);
+
+        const updated: Artifact = {
+          ...artifact,
+          sourceCode: nextCode,
+          meta: updatedMeta,
+        };
+
+        setLoadedSourceCode(nextCode);
+        onUpdateArtifact(updated);
+        setPendingSimulation(null);
+        setPatchInput('');
+
+        const summary = [];
+        if (hasCodeChange) summary.push(`代码升级至 REV:${nextRev}`);
+        if (pendingSimulation.hasTagChange) summary.push('标签已更新');
+        if (pendingSimulation.hasDescChange) summary.push('研判备忘已写入');
+
+        toast.success(summary.length > 0 ? `修改已落盘：${summary.join(' · ')}` : '修改已成功提交');
+        await refreshHistory();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`提交落盘失败: ${msg}`);
+      } finally {
+        setIsCommitting(false);
+      }
+    }, 20);
+  };
+
   const handleRestoreRevision = async (targetRev: number) => {
     const historicalContent = await galleryStorage.loadNegativeRevision(
       artifact.meta.id,
@@ -319,7 +358,6 @@ ${artifact.sourceCode}
     await refreshHistory();
   };
 
-  // 手动一键预缓存外链资产
   const handleCacheAllAssets = async () => {
     if (!assetStats || assetStats.total === 0) return;
     toast.info('正在下载并缓存外部资源...');
@@ -356,7 +394,6 @@ ${artifact.sourceCode}
         onToggleConsole={() => setIsConsoleOpen(!isConsoleOpen)}
       />
 
-      {/* 主体视口与控制台 */}
       <div className="flex-1 flex overflow-hidden">
         <div className="relative flex-1 bg-black p-3 md:p-6 flex items-center justify-center overflow-hidden">
           {viewingSnapshot && (
@@ -425,6 +462,7 @@ ${artifact.sourceCode}
                   viewingRevision={viewingSnapshot?.revision}
                   patchInput={patchInput}
                   copied={copied}
+                  isSimulating={isSimulating}
                   onPatchInputChange={setPatchInput}
                   onCopyPromptContext={handleCopyPromptContext}
                   onApplyPatch={handleApplyPatch}
@@ -466,6 +504,24 @@ ${artifact.sourceCode}
           </aside>
         )}
       </div>
+
+      {/* Diff 审查与决策确认模态框 */}
+      {pendingSimulation && (
+        <DarkroomDiffModal
+          originalCode={activeSourceCode}
+          originalTags={artifact.meta.tags}
+          originalDescription={artifact.meta.description}
+          targetRevision={
+            pendingSimulation.hasCodeChange
+              ? artifact.meta.currentRevision + 1
+              : artifact.meta.currentRevision
+          }
+          simulation={pendingSimulation}
+          isCommitting={isCommitting}
+          onConfirm={handleConfirmSimulation}
+          onCancel={() => setPendingSimulation(null)}
+        />
+      )}
     </div>
   );
 };

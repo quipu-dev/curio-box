@@ -5,11 +5,18 @@ export interface Statement {
   contexts: string[];
 }
 
+export interface PatchSimulationResult {
+  nextCode: string;
+  nextTags: string[];
+  nextDescription?: string;
+  hasCodeChange: boolean;
+  hasTagChange: boolean;
+  hasDescChange: boolean;
+  executedCommands: PatchCommand[];
+}
+
 /**
- * 遵循 Quipu 规范的通用代码块解析器：
- * 1. 任何带有 act 标识的围栏作为新指令语句起点。
- * 2. 随后的任意代码块（无论是否带语言标签）均作为该指令的 contexts 参数收集。
- * 3. 严格开闭围栏对称匹配，支持 ``` 与 ~~~。
+ * 遵循 Quipu 规范的通用代码块解析器
  */
 export class StateBlockParser {
   private readonly fenceStartRegex = /^(`{3,}|~{3,})(.*)$/;
@@ -39,7 +46,6 @@ export class StateBlockParser {
         if (trimmedLine === currentFence) {
           inBlock = false;
           let fullContent = blockLines.join('\n');
-          // 仿照 Quipu 统一剔除尾部单个多余换行符
           if (fullContent.endsWith('\n')) {
             fullContent = fullContent.slice(0, -1);
           }
@@ -66,7 +72,7 @@ export class StateBlockParser {
 }
 
 /**
- * 暗房指令调度器：将通用的 Statement 序列映射为工件系统能够执行的 PatchCommand
+ * 暗房指令调度器
  */
 export class DarkroomPatchFSM {
   private parser = new StateBlockParser();
@@ -83,7 +89,6 @@ export class DarkroomPatchFSM {
       const action = tokens[0] as PatchAction;
 
       if (action === 'add_tag' || action === 'remove_tag') {
-        // 允许从 act 行内（如 add_tag tag1）或后续 contexts 块中提取标签
         const tagTokens: string[] = tokens.slice(1);
         for (const ctx of stmt.contexts) {
           tagTokens.push(...ctx.trim().split(/\s+/).filter(Boolean));
@@ -124,8 +129,13 @@ export class DarkroomPatchFSM {
 }
 
 export const DarkroomApplier = {
-  apply(sourceCode: string, command: PatchCommand): string {
+  apply(sourceCode: string, command: PatchCommand, index = 0): string {
     if (command.action === 'write_file') {
+      if (!command.newDoc || !command.newDoc.trim()) {
+        throw new Error(
+          `【指令 #${index + 1} write_file 失败】未能解析到待写入的代码内容，请检查代码围栏。`,
+        );
+      }
       return command.newDoc;
     }
 
@@ -134,8 +144,15 @@ export const DarkroomApplier = {
       const normalizedOld = command.oldDoc.replace(/\r\n/g, '\n');
       const normalizedNew = command.newDoc.replace(/\r\n/g, '\n');
 
+      if (!normalizedOld) {
+        throw new Error(`【指令 #${index + 1} patch_file 失败】未提供需要替换的 old_doc 片段。`);
+      }
+
       if (!normalizedSource.includes(normalizedOld)) {
-        throw new Error('【补丁冲突】目标代码未匹配到 old_doc 指定的内容，无法应用补丁。');
+        const snippet = normalizedOld.slice(0, 48).replace(/\n/g, '↵');
+        throw new Error(
+          `【指令 #${index + 1} 补丁冲突】源码中未匹配到 old_doc：“${snippet}${normalizedOld.length > 48 ? '...' : ''}”。请核对代码行是否已被修改。`,
+        );
       }
 
       return normalizedSource.replace(normalizedOld, normalizedNew);
@@ -161,5 +178,54 @@ export const DarkroomApplier = {
     }
 
     return currentTags;
+  },
+
+  /**
+   * 事务性沙箱预演模拟：必须全量无冲突通过，否则立即阻断抛错
+   */
+  simulate(
+    baseCode: string,
+    baseTags: string[],
+    baseDescription: string | undefined,
+    commands: PatchCommand[],
+  ): PatchSimulationResult {
+    if (commands.length === 0) {
+      throw new Error('未识别到有效的指令块。请确认围栏语法是否符合规范（包含 ```act 指令）。');
+    }
+
+    let tempCode = baseCode;
+    let tempTags = [...baseTags];
+    let tempDesc = baseDescription;
+
+    let hasCodeChange = false;
+    let hasTagChange = false;
+    let hasDescChange = false;
+
+    for (let idx = 0; idx < commands.length; idx++) {
+      const cmd = commands[idx];
+      if (cmd.action === 'patch_file' || cmd.action === 'write_file') {
+        tempCode = this.apply(tempCode, cmd, idx);
+        hasCodeChange = true;
+      } else if (cmd.action === 'add_tag' || cmd.action === 'remove_tag') {
+        const nextTags = this.applyTags(tempTags, cmd);
+        if (JSON.stringify(nextTags) !== JSON.stringify(tempTags)) {
+          tempTags = nextTags;
+          hasTagChange = true;
+        }
+      } else if (cmd.action === 'set_description') {
+        tempDesc = cmd.description ?? '';
+        hasDescChange = true;
+      }
+    }
+
+    return {
+      nextCode: tempCode,
+      nextTags: tempTags,
+      nextDescription: tempDesc,
+      hasCodeChange,
+      hasTagChange,
+      hasDescChange,
+      executedCommands: commands,
+    };
   },
 };

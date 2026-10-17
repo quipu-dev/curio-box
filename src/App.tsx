@@ -415,26 +415,66 @@ function MainApp() {
   };
 
   const handleUpdateTags = async (filename: string, newTags: string[]) => {
-    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, { tags: newTags });
+    // 乐观更新：立刻在内存与 UI 中呈现
+    const prevArtifacts = artifacts;
+    const now = new Date().toISOString();
     setArtifacts((prev) =>
-      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+      prev.map((item) =>
+        item.meta.filename === filename
+          ? { ...item, meta: { ...item.meta, tags: newTags, updatedAt: now } }
+          : item,
+      ),
     );
+
+    try {
+      await galleryStorage.updateArtifactMeta(filename, { tags: newTags });
+    } catch (err) {
+      setArtifacts(prevArtifacts); // 异常回滚
+      toast.error('更新标签失败，已还原');
+    }
   };
 
   const handleUpdateRating = async (filename: string, newRating: number) => {
-    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, { rating: newRating });
+    // 乐观更新：立刻点亮/熄灭星级
+    const prevArtifacts = artifacts;
+    const now = new Date().toISOString();
     setArtifacts((prev) =>
-      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+      prev.map((item) =>
+        item.meta.filename === filename
+          ? { ...item, meta: { ...item.meta, rating: newRating, updatedAt: now } }
+          : item,
+      ),
     );
+
+    try {
+      await galleryStorage.updateArtifactMeta(filename, { rating: newRating });
+    } catch (err) {
+      setArtifacts(prevArtifacts); // 异常回滚
+      toast.error('更新评分失败，已还原');
+    }
   };
 
   const handleUpdateDescription = async (filename: string, newDescription: string) => {
-    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, {
-      description: newDescription.trim() || undefined,
-    });
+    // 乐观更新：立刻在档案卡中展示新描述
+    const prevArtifacts = artifacts;
+    const now = new Date().toISOString();
+    const trimmedDesc = newDescription.trim() || undefined;
     setArtifacts((prev) =>
-      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+      prev.map((item) =>
+        item.meta.filename === filename
+          ? { ...item, meta: { ...item.meta, description: trimmedDesc, updatedAt: now } }
+          : item,
+      ),
     );
+
+    try {
+      await galleryStorage.updateArtifactMeta(filename, {
+        description: trimmedDesc,
+      });
+    } catch (err) {
+      setArtifacts(prevArtifacts); // 异常回滚
+      toast.error('更新研判备忘失败，已还原');
+    }
   };
 
   const handleRenameArtifact = async (

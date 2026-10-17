@@ -3,6 +3,7 @@ import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import {
   CheckCircle2,
   Edit2,
+  Loader2,
   MessageSquareQuote,
   Save,
   Sparkles,
@@ -27,11 +28,19 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
   onCacheAllAssets,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [descValue, setDescValue] = useState(description || '');
 
   const handleSaveDesc = async () => {
-    await onUpdateDescription(descValue);
-    setIsEditing(false);
+    setIsSaving(true);
+    setTimeout(async () => {
+      try {
+        await onUpdateDescription(descValue);
+        setIsEditing(false);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 20);
   };
 
   return (
@@ -48,19 +57,25 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={handleSaveDesc}
-                className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[10px] hover:opacity-90 transition-opacity"
+                className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[10px] hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                <Save className="w-2.5 h-2.5" />
-                <span>保存</span>
+                {isSaving ? (
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                ) : (
+                  <Save className="w-2.5 h-2.5" />
+                )}
+                <span>{isSaving ? '保存中' : '保存'}</span>
               </button>
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={() => {
                   setDescValue(description || '');
                   setIsEditing(false);
                 }}
-                className="px-1.5 py-0.5 text-muted hover:text-main text-[10px]"
+                className="px-1.5 py-0.5 text-muted hover:text-main text-[10px] disabled:opacity-50"
               >
                 取消
               </button>

@@ -52,9 +52,11 @@ async function loadHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
 
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
+  private metaCache: Record<string, ArtifactMeta> | null = null;
 
   public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
     this.dirHandle = handle;
+    this.metaCache = null; // 切换目录时清空元数据缓存
     persistHandleToIDB(handle).catch(() => {});
   }
 
@@ -608,14 +610,19 @@ export class GalleryStorage {
   }
 
   private async readAllMeta(): Promise<Record<string, ArtifactMeta>> {
+    if (this.metaCache) {
+      return this.metaCache;
+    }
     if (!this.dirHandle) return {};
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
       const metaHandle = await galleryDir.getFileHandle(META_FILE);
       const file = await metaHandle.getFile();
       const text = await file.text();
-      return JSON.parse(text);
+      this.metaCache = JSON.parse(text);
+      return this.metaCache || {};
     } catch {
+      this.metaCache = {};
       return {};
     }
   }

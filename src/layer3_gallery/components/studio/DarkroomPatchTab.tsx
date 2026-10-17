@@ -1,4 +1,4 @@
-import { Check, Copy, Eye, GitBranch } from 'lucide-react';
+import { Check, Copy, Eye, GitBranch, Loader2, Sparkles } from 'lucide-react';
 import type React from 'react';
 
 interface DarkroomPatchTabProps {
@@ -6,6 +6,7 @@ interface DarkroomPatchTabProps {
   viewingRevision?: number;
   patchInput: string;
   copied: boolean;
+  isSimulating: boolean;
   onPatchInputChange: (val: string) => void;
   onCopyPromptContext: () => void;
   onApplyPatch: () => void;
@@ -18,6 +19,7 @@ export const DarkroomPatchTab: React.FC<DarkroomPatchTabProps> = ({
   viewingRevision,
   patchInput,
   copied,
+  isSimulating,
   onPatchInputChange,
   onCopyPromptContext,
   onApplyPatch,
@@ -69,7 +71,7 @@ export const DarkroomPatchTab: React.FC<DarkroomPatchTabProps> = ({
           className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
         >
           {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-          <span>{copied ? '已复制源码上下文！' : '复制大模型提示词上下文'}</span>
+          <span>{copied ? '已复制完整提示词上下文！' : '复制大模型提示词上下文'}</span>
         </button>
       </div>
 
@@ -77,14 +79,8 @@ export const DarkroomPatchTab: React.FC<DarkroomPatchTabProps> = ({
         value={patchInput}
         onChange={(e) => onPatchInputChange(e.target.value)}
         placeholder={`粘贴大模型生成的指令块（支持 patch_file / write_file / add_tag 等）：
-\`\`\`act
-add_tag
-\`\`\`
-\`\`\`
-形态:webgl 物理:流体
-\`\`\`
 
-或差量补丁指令：
+【1. 差量精准修改 patch_file】
 \`\`\`act
 patch_file
 \`\`\`
@@ -93,6 +89,23 @@ patch_file
 \`\`\`
 \`\`\`new_doc
 <替换后的新代码行>
+\`\`\`
+
+【2. 全量源码覆写 write_file】
+\`\`\`act
+write_file
+\`\`\`
+\`\`\`html
+<!DOCTYPE html>
+<html>...完整源码...</html>
+\`\`\`
+
+【3. 调整标签或研判备忘】
+\`\`\`act
+add_tag
+\`\`\`
+\`\`\`
+形态:webgl 物理:流体
 \`\`\``}
         className="flex-1 min-h-[300px] w-full bg-code text-zinc-300 border border-border p-3.5 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
       />
@@ -100,10 +113,21 @@ patch_file
       <div className="flex flex-col gap-2">
         <button
           type="button"
+          disabled={isSimulating}
           onClick={onApplyPatch}
-          className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 transition-opacity"
+          className="w-full bg-main text-surface font-semibold py-2.5 rounded text-xs hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
         >
-          执行命令
+          {isSimulating ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>正在校验并预演指令...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>解析并预演指令 (审查 Diff)</span>
+            </>
+          )}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
+import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
 import type { Artifact } from '@/types';
 import {
@@ -20,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ArtifactInspectorModalProps {
   artifact: Artifact;
@@ -53,6 +54,24 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(artifact.meta.name);
   const [showCodePreview, setShowCodePreview] = useState(false);
+  const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
+
+  // 异步按需加载源码
+  useEffect(() => {
+    let isCancelled = false;
+    if (artifact.sourceCode) {
+      setSourceCode(artifact.sourceCode);
+    } else {
+      galleryStorage.loadArtifactSource(artifact.meta.filename).then((code) => {
+        if (!isCancelled) {
+          setSourceCode(code);
+        }
+      });
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [artifact.meta.filename, artifact.sourceCode]);
 
   // 评分交互
   const handleRatingClick = async (star: number) => {
@@ -97,7 +116,7 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
 
   // 复制完整源码
   const handleCopySource = () => {
-    navigator.clipboard.writeText(artifact.sourceCode);
+    navigator.clipboard.writeText(sourceCode);
     setCopiedCode(true);
     toast.success('源码已复制至剪贴板');
     setTimeout(() => setCopiedCode(false), 2000);
@@ -276,7 +295,7 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
           </div>
 
           {/* 属性状态矩阵 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11px]">
             <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-1">
               <span className="text-muted flex items-center gap-1">
                 <Layers className="w-3 h-3 text-sky-400" />
@@ -290,7 +309,17 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
                 <HardDrive className="w-3 h-3 text-amber-400" />
                 <span>源码体量</span>
               </span>
-              <span className="font-bold text-main">{artifact.sourceCode.length} 字符</span>
+              <span className="font-bold text-main">{sourceCode.length} 字符</span>
+            </div>
+
+            <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-1">
+              <span className="text-muted flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-sky-400" />
+                <span>导入时间</span>
+              </span>
+              <span className="font-medium text-main truncate">
+                {new Date(artifact.meta.createdAt || artifact.meta.updatedAt).toLocaleDateString()}
+              </span>
             </div>
 
             <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-1">
@@ -406,7 +435,7 @@ export const ArtifactInspectorModal: React.FC<ArtifactInspectorModalProps> = ({
 
             {showCodePreview && (
               <pre className="p-3 bg-code text-zinc-300 text-[11px] max-h-56 overflow-y-auto leading-relaxed select-text">
-                {artifact.sourceCode}
+                {sourceCode || '正在载入源码...'}
               </pre>
             )}
           </div>

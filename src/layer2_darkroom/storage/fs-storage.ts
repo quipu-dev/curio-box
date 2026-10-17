@@ -108,7 +108,7 @@ export class GalleryStorage {
   }
 
   /**
-   * 创建并保存一个新工件，自动记录初始版本 REV:1
+   * 创建并保存一个新工件，自动记录初始版本 REV:1 与不可变的创世导入时间 createdAt
    */
   public async createArtifact(
     filename: string,
@@ -116,13 +116,15 @@ export class GalleryStorage {
     name: string,
     tags: string[] = ['形态:原生html', '状态:新建'],
   ): Promise<Artifact> {
+    const now = new Date().toISOString();
     const newMeta: ArtifactMeta = {
       id: `art_${Math.random().toString(16).slice(2, 10)}`,
       name,
       filename,
       tags,
       currentRevision: 1,
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
     if (this.dirHandle) {
@@ -145,6 +147,24 @@ export class GalleryStorage {
     };
   }
 
+  /**
+   * 按需读取指定工件的最新 HTML 源码内容
+   */
+  public async loadArtifactSource(filename: string): Promise<string> {
+    if (!this.dirHandle) {
+      const mock = this.getMockArtifacts().find((m) => m.meta.filename === filename);
+      return mock?.sourceCode || '';
+    }
+    try {
+      const fileHandle = await this.dirHandle.getFileHandle(filename);
+      const file = await fileHandle.getFile();
+      return await file.text();
+    } catch (err) {
+      console.warn(`读取工件源码失败 [${filename}]:`, err);
+      return '';
+    }
+  }
+
   public async scanArtifacts(): Promise<Artifact[]> {
     if (!this.dirHandle) {
       return this.getMockArtifacts();
@@ -157,31 +177,42 @@ export class GalleryStorage {
       this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
     ).values();
 
+    const now = new Date().toISOString();
+
     for await (const entry of entries) {
       if (entry.kind === 'file' && entry.name.endsWith('.html')) {
-        const file = await (entry as FileSystemFileHandle).getFile();
-        const text = await file.text();
-
-        const meta = metaMap[entry.name] || {
-          id: `art_${Math.random().toString(16).slice(2, 10)}`,
-          name: entry.name.replace(/\.html$/, ''),
-          filename: entry.name,
-          tags: ['形态:原生html', '状态:未分类'],
-          currentRevision: 1,
-          updatedAt: new Date().toISOString(),
-        };
+        const rawMeta = metaMap[entry.name];
+        const meta: ArtifactMeta = rawMeta
+          ? {
+              ...rawMeta,
+              // 兼容老数据或意外缺失的 createdAt
+              createdAt: rawMeta.createdAt || rawMeta.updatedAt || now,
+            }
+          : {
+              id: `art_${Math.random().toString(16).slice(2, 10)}`,
+              name: entry.name.replace(/\.html$/, ''),
+              filename: entry.name,
+              tags: ['形态:原生html', '状态:未分类'],
+              currentRevision: 1,
+              createdAt: now,
+              updatedAt: now,
+            };
 
         const posterBlobUrl = await this.loadPosterBlobUrl(entry.name);
 
         artifacts.push({
           meta,
-          sourceCode: text,
           posterBlobUrl,
         });
       }
     }
 
-    return artifacts;
+    // 默认按导入时间从新到旧排序
+    return artifacts.sort((a, b) => {
+      const timeA = new Date(a.meta.createdAt).getTime() || 0;
+      const timeB = new Date(b.meta.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
   }
 
   public async saveArtifactSource(
@@ -237,12 +268,13 @@ export class GalleryStorage {
   }
 
   /**
-   * 局部更新工件元数据（如打标签、星级评分、工件别名等）
+   * 局部更新工件元数据（如打标签、星级评分等）：严格保留 createdAt，仅更新 updatedAt
    */
   public async updateArtifactMeta(
     filename: string,
     partialMeta: Partial<ArtifactMeta>,
   ): Promise<ArtifactMeta> {
+    const now = new Date().toISOString();
     const allMeta = await this.readAllMeta();
     const existing = allMeta[filename] || {
       id: `art_${Math.random().toString(16).slice(2, 10)}`,
@@ -250,13 +282,15 @@ export class GalleryStorage {
       filename,
       tags: ['形态:原生html'],
       currentRevision: 1,
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
     const updated: ArtifactMeta = {
       ...existing,
       ...partialMeta,
-      updatedAt: new Date().toISOString(),
+      createdAt: existing.createdAt || now, // 绝对保留导入创世时间
+      updatedAt: now,
     };
 
     allMeta[filename] = updated;
@@ -271,7 +305,7 @@ export class GalleryStorage {
   }
 
   /**
-   * 重命名工件（支持重命名物理文件与底片快照链迁移）
+   * 重命名工件（支持重命名物理文件与底片快照链迁移）：透传保留原始 createdAt
    */
   public async renameArtifact(
     oldFilename: string,
@@ -282,17 +316,18 @@ export class GalleryStorage {
       throw new Error('演示模式下暂不支持文件重命名');
     }
 
+    const now = new Date().toISOString();
     const oldBase = oldFilename.replace(/\.html$/, '');
     const newBase = newFilename.replace(/\.html$/, '');
     const resolvedDisplayName = newName || newBase;
 
-    // 绝对安全防御：若新旧文件名完全一致，杜绝触发自删逻辑，直接安全返回
+    // 绝对安全防御：若新旧文件名完全一致，直接安全返回
     if (oldFilename === newFilename) {
       const allMeta = await this.readAllMeta();
       const existing = allMeta[oldFilename];
       if (existing && existing.name !== resolvedDisplayName) {
         existing.name = resolvedDisplayName;
-        existing.updatedAt = new Date().toISOString();
+        existing.updatedAt = now;
         await this.saveMeta(existing);
       }
       const fileHandle = await this.dirHandle.getFileHandle(oldFilename);
@@ -306,7 +341,8 @@ export class GalleryStorage {
           filename: oldFilename,
           tags: ['形态:原生html'],
           currentRevision: 1,
-          updatedAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
         },
         sourceCode: content,
         posterBlobUrl,
@@ -388,7 +424,7 @@ export class GalleryStorage {
       console.warn('迁移关联资源异常:', err);
     }
 
-    // 5. 更新元数据索引
+    // 5. 更新元数据索引，透传 createdAt
     const allMeta = await this.readAllMeta();
     const oldMeta = allMeta[oldFilename] || {
       id: `art_${Math.random().toString(16).slice(2, 10)}`,
@@ -396,7 +432,8 @@ export class GalleryStorage {
       filename: oldFilename,
       tags: ['形态:原生html'],
       currentRevision: 1,
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
     delete allMeta[oldFilename];
@@ -404,7 +441,8 @@ export class GalleryStorage {
       ...oldMeta,
       filename: newFilename,
       name: newName || oldMeta.name,
-      updatedAt: new Date().toISOString(),
+      createdAt: oldMeta.createdAt || now,
+      updatedAt: now,
     };
     allMeta[newFilename] = newMeta;
 
@@ -630,6 +668,7 @@ export class GalleryStorage {
           filename: 'fluid-simulation.html',
           tags: ['领域:图形学', '形态:webgl', '物理:流体', '模型:claude-3.5-sonnet'],
           currentRevision: 1,
+          createdAt: '2025-02-28T12:00:00Z',
           updatedAt: '2025-02-28T12:00:00Z',
         },
         sourceCode: `<!DOCTYPE html>

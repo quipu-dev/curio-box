@@ -9,12 +9,14 @@ import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { Header } from '@/layer3_gallery/components/Header';
 import type { Artifact } from '@/types';
-import { UploadCloud } from 'lucide-react';
+import { ArrowDownUp, Calendar, Clock, Star, UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface WindowWithFSA extends Window {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 }
+
+export type SortOption = 'date-desc' | 'date-asc' | 'updated-desc' | 'rating-desc' | 'name-asc';
 
 // 解析当前 URL Hash 路由状态
 function parseHashRoute(hash: string): {
@@ -36,19 +38,64 @@ function parseHashRoute(hash: string): {
   return { type: 'gallery', filename: null };
 }
 
+// 时间线分桶格式化（精确到天）
+function formatTimelineGroupKey(dateString: string): string {
+  try {
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return '更早归档';
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    return `${year}年 ${month.toString().padStart(2, '0')}月 ${day.toString().padStart(2, '0')}日`;
+  } catch {
+    return '更早归档';
+  }
+}
+
+// 星级分桶格式化
+function formatRatingGroupKey(rating?: number): string {
+  if (!rating || rating <= 0) return '未评分工件';
+  return `${rating} 星精选`;
+}
+
 function MainApp() {
   const { toast } = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  // 网页全屏放映中的工件物理文件名
   const [stageFilename, setStageFilename] = useState<string | null>(null);
-  // 独立暗房工作台中的工件物理文件名
   const [studioFilename, setStudioFilename] = useState<string | null>(null);
-  // 标本档案检视中的工件物理文件名
   const [inspectingFilename, setInspectingFilename] = useState<string | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // 画廊排序方式：默认导入时间从新到旧 (date-desc)
+  const [sortBy, setSortBy] = useState<SortOption>(() => {
+    if (typeof window === 'undefined') return 'date-desc';
+    const saved = localStorage.getItem('curio_sort_by');
+    return (saved as SortOption) || 'date-desc';
+  });
+
+  const handleSortChange = (newSort: SortOption) => {
+    setSortBy(newSort);
+    try {
+      localStorage.setItem('curio_sort_by', newSort);
+    } catch {}
+  };
+
+  // 画廊网格缩放列数 (2 ~ 6)
+  const [gridCols, setGridCols] = useState<number>(() => {
+    if (typeof window === 'undefined') return 4;
+    const saved = localStorage.getItem('curio_grid_cols');
+    return saved ? Number.parseInt(saved, 10) : 4;
+  });
+
+  const handleGridColsChange = (cols: number) => {
+    setGridCols(cols);
+    try {
+      localStorage.setItem('curio_grid_cols', cols.toString());
+    } catch {}
+  };
 
   // 装配台弹窗控制
   const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
@@ -59,7 +106,7 @@ function MainApp() {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // 1. 修复全屏视口滚动条溢出：当处于放映、暗房或弹窗态时锁死 body 滚动
+  // 全屏视口滚动条溢出防护：当处于放映、暗房或弹窗态时锁死 body 滚动
   useEffect(() => {
     const isOverlayActive = Boolean(
       stageFilename || studioFilename || inspectingFilename || composerInitialCode !== null,
@@ -73,7 +120,7 @@ function MainApp() {
     }
   }, [stageFilename, studioFilename, inspectingFilename, composerInitialCode]);
 
-  // 2. Hash 路由双向同步机制
+  // Hash 路由双向同步机制
   const syncFromHash = useCallback(() => {
     const route = parseHashRoute(window.location.hash);
     if (route.type === 'stage') {
@@ -188,12 +235,10 @@ function MainApp() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // 现有所有工件的文件名列表（用于查重）
   const existingFilenames = useMemo(() => {
     return artifacts.map((a) => a.meta.filename);
   }, [artifacts]);
 
-  // 全局已知的所有标签池（用于自动补全推荐）
   const allKnownTags = useMemo(() => {
     const set = new Set<string>();
     for (const art of artifacts) {
@@ -206,7 +251,7 @@ function MainApp() {
     return Array.from(set);
   }, [artifacts]);
 
-  // 派生当前活动状态工件，彻底杜绝对象分裂与同步竞争
+  // 派生当前活动状态工件
   const stageArtifact = useMemo(
     () => artifacts.find((a) => a.meta.filename === stageFilename) ?? null,
     [artifacts, stageFilename],
@@ -219,6 +264,20 @@ function MainApp() {
     () => artifacts.find((a) => a.meta.filename === inspectingFilename) ?? null,
     [artifacts, inspectingFilename],
   );
+
+  // 当进入暗房或检视器时，如未加载 sourceCode，自动按需读取并缓冲
+  useEffect(() => {
+    const target = studioArtifact || inspectingArtifact;
+    if (target && !target.sourceCode) {
+      galleryStorage.loadArtifactSource(target.meta.filename).then((code) => {
+        setArtifacts((prev) =>
+          prev.map((item) =>
+            item.meta.filename === target.meta.filename ? { ...item, sourceCode: code } : item,
+          ),
+        );
+      });
+    }
+  }, [studioArtifact, inspectingArtifact]);
 
   // 从剪贴板导入
   const handleImportFromClipboard = async () => {
@@ -266,7 +325,6 @@ function MainApp() {
     };
 
     const handleDragLeave = (e: DragEvent) => {
-      // 离开视口边缘时消除高亮
       if (!e.relatedTarget) {
         setIsDragOver(false);
       }
@@ -374,9 +432,133 @@ function MainApp() {
     }
   };
 
-  const filteredArtifacts = useMemo(() => {
+  // 1. 过滤匹配
+  const filteredRawArtifacts = useMemo(() => {
     return artifacts.filter((item) => TagQueryEngine.match(item.meta.tags, searchQuery));
   }, [artifacts, searchQuery]);
+
+  // 2. 依据当前排序选项进行确定性排序
+  const sortedArtifacts = useMemo(() => {
+    const list = [...filteredRawArtifacts];
+    list.sort((a, b) => {
+      // 评分优先
+      if (sortBy === 'rating-desc') {
+        const ratingA = a.meta.rating || 0;
+        const ratingB = b.meta.rating || 0;
+        if (ratingB !== ratingA) {
+          return ratingB - ratingA;
+        }
+        // 评分相同时次级按导入时间降序
+        const timeA = new Date(a.meta.createdAt).getTime() || 0;
+        const timeB = new Date(b.meta.createdAt).getTime() || 0;
+        return timeB - timeA;
+      }
+
+      // 最近修改优先 (updatedAt)
+      if (sortBy === 'updated-desc') {
+        const timeA = new Date(a.meta.updatedAt).getTime() || 0;
+        const timeB = new Date(b.meta.updatedAt).getTime() || 0;
+        return timeB - timeA;
+      }
+
+      // 最早导入优先 (createdAt)
+      if (sortBy === 'date-asc') {
+        const timeA = new Date(a.meta.createdAt).getTime() || 0;
+        const timeB = new Date(b.meta.createdAt).getTime() || 0;
+        return timeA - timeB;
+      }
+
+      // 名称字典序
+      if (sortBy === 'name-asc') {
+        return a.meta.name.localeCompare(b.meta.name, 'zh-CN');
+      }
+
+      // 默认 date-desc: 最新导入优先 (createdAt)
+      const timeA = new Date(a.meta.createdAt).getTime() || 0;
+      const timeB = new Date(b.meta.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
+    return list;
+  }, [filteredRawArtifacts, sortBy]);
+
+  // 3. 动态聚合分桶（根据排序方式自适应）
+  const displayGroups = useMemo(() => {
+    const groups: {
+      key: string;
+      icon: 'calendar' | 'clock' | 'star' | 'list';
+      items: Artifact[];
+    }[] = [];
+    const groupMap = new Map<string, Artifact[]>();
+
+    if (sortBy === 'rating-desc') {
+      // 评分优先：按星级从高到低分桶
+      for (const art of sortedArtifacts) {
+        const key = formatRatingGroupKey(art.meta.rating);
+        let list = groupMap.get(key);
+        if (!list) {
+          list = [];
+          groupMap.set(key, list);
+          groups.push({ key, icon: 'star', items: list });
+        }
+        list.push(art);
+      }
+      return groups;
+    }
+
+    if (sortBy === 'name-asc') {
+      // 字母排序：单一列表呈现
+      return [{ key: '所有工件 (名称排序)', icon: 'list', items: sortedArtifacts }];
+    }
+
+    if (sortBy === 'updated-desc') {
+      // 最近修改：按 updatedAt 分桶
+      for (const art of sortedArtifacts) {
+        const key = formatTimelineGroupKey(art.meta.updatedAt);
+        let list = groupMap.get(key);
+        if (!list) {
+          list = [];
+          groupMap.set(key, list);
+          groups.push({ key, icon: 'clock', items: list });
+        }
+        list.push(art);
+      }
+      return groups;
+    }
+
+    // 时间排序 (date-desc / date-asc)：按不可变导入时间 createdAt 分桶
+    for (const art of sortedArtifacts) {
+      const key = formatTimelineGroupKey(art.meta.createdAt);
+      let list = groupMap.get(key);
+      if (!list) {
+        list = [];
+        groupMap.set(key, list);
+        groups.push({ key, icon: 'calendar', items: list });
+      }
+      list.push(art);
+    }
+
+    return groups;
+  }, [sortedArtifacts, sortBy]);
+
+  // 动态网格类名计算
+  const gridClass = useMemo(() => {
+    switch (gridCols) {
+      case 2:
+        return 'grid grid-cols-1 sm:grid-cols-2 gap-6';
+      case 3:
+        return 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5';
+      case 4:
+        return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5';
+      case 5:
+        return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4';
+      case 6:
+        return 'grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3';
+      default:
+        return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5';
+    }
+  }, [gridCols]);
+
+  const isCompactMode = gridCols >= 5;
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-main">
@@ -392,28 +574,136 @@ function MainApp() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         allTags={allKnownTags}
+        gridCols={gridCols}
+        onGridColsChange={handleGridColsChange}
       />
 
       <main className="flex-1 p-6 md:p-8">
-        <div className="mb-6 flex justify-between items-center text-xs font-mono text-muted">
-          <div>
-            工件总数：
-            <span className="text-main font-semibold">{filteredArtifacts.length}</span> /{' '}
-            {artifacts.length}
+        {/* 工具信息栏与排序控制 */}
+        <div className="mb-6 flex flex-wrap gap-3 justify-between items-center text-xs font-mono text-muted">
+          <div className="flex items-center gap-2">
+            <span>工件总数：</span>
+            <span className="text-main font-semibold">{sortedArtifacts.length}</span>
+            <span>/</span>
+            <span>{artifacts.length}</span>
+            {!hasDirectory && (
+              <span className="hidden sm:inline opacity-70">
+                （当前为演示模式，可点击右上角关联本地目录）
+              </span>
+            )}
           </div>
-          {!hasDirectory && <div>（当前为演示模式，可点击右上角打开本地工件目录）</div>}
+
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-[11px] text-muted">
+              <ArrowDownUp className="w-3 h-3 text-sky-400" />
+              <span>排序：</span>
+            </span>
+
+            <div className="flex items-center bg-surface border border-border rounded overflow-hidden p-0.5">
+              <button
+                type="button"
+                onClick={() => handleSortChange('date-desc')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  sortBy === 'date-desc'
+                    ? 'bg-zinc-800 text-white font-medium'
+                    : 'text-muted hover:text-main'
+                }`}
+                title="按导入时间降序（最新导入优先）"
+              >
+                最新导入
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSortChange('date-asc')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  sortBy === 'date-asc'
+                    ? 'bg-zinc-800 text-white font-medium'
+                    : 'text-muted hover:text-main'
+                }`}
+                title="按导入时间升序（最早导入优先）"
+              >
+                最早导入
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSortChange('updated-desc')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  sortBy === 'updated-desc'
+                    ? 'bg-zinc-800 text-white font-medium'
+                    : 'text-muted hover:text-main'
+                }`}
+                title="按最后修改时间降序（最近活跃优先）"
+              >
+                最近修改
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSortChange('rating-desc')}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+                  sortBy === 'rating-desc'
+                    ? 'bg-zinc-800 text-amber-300 font-medium'
+                    : 'text-muted hover:text-main'
+                }`}
+                title="按评星降序（高分优先）"
+              >
+                <Star className="w-3 h-3 fill-current text-amber-400" />
+                <span>评分最高</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSortChange('name-asc')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  sortBy === 'name-asc'
+                    ? 'bg-zinc-800 text-white font-medium'
+                    : 'text-muted hover:text-main'
+                }`}
+                title="按名称拼音与字母排序"
+              >
+                名称 A-Z
+              </button>
+            </div>
+          </div>
         </div>
 
-        {filteredArtifacts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredArtifacts.map((artifact) => (
-              <ArtifactCard
-                key={artifact.meta.filename}
-                artifact={artifact}
-                onOpenStage={(art) => navigateToStage(art.meta.filename)}
-                onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
-                onOpenInspector={(art) => setInspectingFilename(art.meta.filename)}
-              />
+        {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
+          <div className="flex flex-col gap-10">
+            {displayGroups.map((group) => (
+              <section key={group.key} className="flex flex-col gap-4">
+                {/* 常规文档流分组头 */}
+                <div className="py-2 border-b border-border flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
+                    {group.icon === 'star' ? (
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    ) : group.icon === 'clock' ? (
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    ) : (
+                      <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                    )}
+                    <span>{group.key}</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-muted">
+                    {group.items.length} 件工件
+                  </div>
+                </div>
+
+                {/* 动态网格 */}
+                <div className={gridClass}>
+                  {group.items.map((artifact) => (
+                    <ArtifactCard
+                      key={artifact.meta.filename}
+                      artifact={artifact}
+                      compact={isCompactMode}
+                      onOpenStage={(art) => navigateToStage(art.meta.filename)}
+                      onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
+                      onOpenInspector={(art) => setInspectingFilename(art.meta.filename)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (
@@ -424,17 +714,19 @@ function MainApp() {
         )}
       </main>
 
-      {/* 活体全屏放映舞台 (显式条件挂载) */}
+      {/* 活体全屏放映舞台 (走马灯顺序跟随当前筛选排序) */}
       {stageArtifact && (
         <FullscreenStage
           artifact={stageArtifact}
+          artifacts={sortedArtifacts}
           onClose={navigateToGallery}
+          onNavigate={(filename) => navigateToStage(filename)}
           onOpenDarkroom={(art) => navigateToStudio(art.meta.filename)}
           onUpdateArtifact={handleUpdateArtifact}
         />
       )}
 
-      {/* 独立全屏暗房工作台 (显式条件挂载) */}
+      {/* 独立全屏暗房工作台 */}
       {studioArtifact && (
         <DarkroomStudio
           artifact={studioArtifact}

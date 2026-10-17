@@ -63,13 +63,32 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
 
   // 游离检视快照（Checkout 模式：只读沙箱试映，不污染物理磁盘）
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshotState | null>(null);
+  const [loadedSourceCode, setLoadedSourceCode] = useState<string>(artifact.sourceCode || '');
 
   const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
 
-  // 派生当前视口渲染的代码 payload
+  // 异步确保暗房源码已完整载入
+  useEffect(() => {
+    let isCancelled = false;
+    if (artifact.sourceCode) {
+      setLoadedSourceCode(artifact.sourceCode);
+    } else {
+      galleryStorage.loadArtifactSource(artifact.meta.filename).then((code) => {
+        if (!isCancelled) {
+          setLoadedSourceCode(code);
+          onUpdateArtifact({ ...artifact, sourceCode: code });
+        }
+      });
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [artifact, onUpdateArtifact]);
+
+  // 派生当前视口渲染的代码 payload (恒定为 string 类型)
   const activeSourceCode = useMemo(() => {
-    return viewingSnapshot ? viewingSnapshot.content : artifact.sourceCode;
-  }, [viewingSnapshot, artifact.sourceCode]);
+    return viewingSnapshot ? viewingSnapshot.content : loadedSourceCode;
+  }, [viewingSnapshot, loadedSourceCode]);
 
   // 加载底片链历史清单
   const refreshHistory = useCallback(async () => {
@@ -188,8 +207,9 @@ ${artifact.sourceCode}
     }
 
     try {
+      const baseCode = activeSourceCode;
       // 预先确保基础原生底片落盘
-      await galleryStorage.ensureGenesisSnapshot(artifact.meta.filename, artifact.sourceCode);
+      await galleryStorage.ensureGenesisSnapshot(artifact.meta.filename, baseCode);
 
       const fsm = new DarkroomPatchFSM();
       const commands = fsm.parse(patchInput);
@@ -198,7 +218,7 @@ ${artifact.sourceCode}
         throw new Error('未能识别到有效的补丁指令块，请检查围栏语法');
       }
 
-      let nextCode = artifact.sourceCode;
+      let nextCode = baseCode;
       let nextTags = [...artifact.meta.tags];
       let hasCodeChange = false;
       let hasTagChange = false;
@@ -212,6 +232,8 @@ ${artifact.sourceCode}
           hasTagChange = true;
         }
       }
+
+      setLoadedSourceCode(nextCode);
 
       const nextRev = hasCodeChange
         ? artifact.meta.currentRevision + 1

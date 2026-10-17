@@ -2,9 +2,18 @@ import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import type { Artifact } from '@/types';
-import { Camera, Code2, GripHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
+import {
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Code2,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
+  X,
+} from 'lucide-react';
 import type React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type DockEdge = 'top' | 'bottom' | 'left' | 'right';
 
@@ -26,7 +35,6 @@ function getInitialDockState(): SavedDockState {
       if (parsed.edge && parsed.position) {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        // 边界安全校验，避免分辨率变化后飞出可视区域
         const safeX = Math.max(0, Math.min(w, parsed.position.x));
         const safeY = Math.max(0, Math.min(h, parsed.position.y));
         return { edge: parsed.edge, position: { x: safeX, y: safeY } };
@@ -40,14 +48,18 @@ function getInitialDockState(): SavedDockState {
 
 interface FullscreenStageProps {
   artifact: Artifact | null;
+  artifacts?: Artifact[];
   onClose: () => void;
+  onNavigate?: (filename: string) => void;
   onOpenDarkroom: (artifact: Artifact) => void;
   onUpdateArtifact: (updated: Artifact) => void;
 }
 
 export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   artifact,
+  artifacts = [],
   onClose,
+  onNavigate,
   onOpenDarkroom,
   onUpdateArtifact,
 }) => {
@@ -61,11 +73,53 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(initialDock.position);
 
+  // 惰性源码缓冲池
+  const [loadedSourceCode, setLoadedSourceCode] = useState<string>(artifact.sourceCode || '');
+
   const isDraggingRef = useRef<boolean>(false);
   const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
+
+  // 走马灯索引计算
+  const currentIndex = useMemo(() => {
+    return artifacts.findIndex((a) => a.meta.filename === artifact.meta.filename);
+  }, [artifacts, artifact.meta.filename]);
+
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex !== -1 && currentIndex < artifacts.length - 1;
+
+  const handlePrev = useCallback(() => {
+    if (hasPrev && onNavigate) {
+      onNavigate(artifacts[currentIndex - 1].meta.filename);
+    }
+  }, [hasPrev, onNavigate, artifacts, currentIndex]);
+
+  const handleNext = useCallback(() => {
+    if (hasNext && onNavigate) {
+      onNavigate(artifacts[currentIndex + 1].meta.filename);
+    }
+  }, [hasNext, onNavigate, artifacts, currentIndex]);
+
+  // 当切换工件时，如果尚未载入源码，异步载入
+  useEffect(() => {
+    let isCancelled = false;
+    if (artifact.sourceCode) {
+      setLoadedSourceCode(artifact.sourceCode);
+    } else {
+      galleryStorage.loadArtifactSource(artifact.meta.filename).then((src) => {
+        if (!isCancelled) {
+          setLoadedSourceCode(src);
+          // 回写至工件缓存
+          onUpdateArtifact({ ...artifact, sourceCode: src });
+        }
+      });
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [artifact, onUpdateArtifact]);
 
   // 监听原生全屏状态变化
   useEffect(() => {
@@ -78,7 +132,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     };
   }, []);
 
-  // 监听 Esc 键盘按键退出
+  // 快捷键隔离监听：Esc 退出全屏，Alt + 左右方向键走马灯切页，彻底杜绝单键与工件画布冲突
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -87,13 +141,24 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         } else {
           onClose();
         }
+        return;
+      }
+
+      // 严格修饰键隔离 (Alt + ArrowLeft / Alt + ArrowRight)
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrev();
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNext();
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, handlePrev, handleNext]);
 
   // 拖拽手柄移动与边缘磁吸处理
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -119,11 +184,9 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       const deltaX = Math.abs(e.clientX - dragStartPosRef.current.x);
       const deltaY = Math.abs(e.clientY - dragStartPosRef.current.y);
 
-      // 位移小于 5px 视作点击切换展开/收拢
       if (deltaX < 5 && deltaY < 5) {
         setIsExpanded((prev) => !prev);
       } else {
-        // 计算最近的屏幕边缘实现自动吸附
         const w = window.innerWidth;
         const h = window.innerHeight;
         const curX = e.clientX;
@@ -156,7 +219,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         setDockEdge(targetEdge);
         setPosition(targetPos);
 
-        // 磁吸位置持久化到本地存储
         try {
           localStorage.setItem(
             DOCK_STORAGE_KEY,
@@ -214,14 +276,14 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     >
       {/* 活体展演沙箱视口 */}
       <SandboxViewport
-        htmlPayload={artifact.sourceCode}
+        htmlPayload={loadedSourceCode}
         isActivated={true}
         onCaptureReady={(cb) => {
           captureHandleRef.current = cb;
         }}
       />
 
-      {/* 仿虚拟机悬浮浮动坞：支持四向边缘自适应吸附与横/竖排版 */}
+      {/* 悬浮浮动坞 */}
       <div
         style={{
           left: `${position.x}px`,
@@ -245,7 +307,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           }
         }}
       >
-        {/* 边缘自适应微光拉手：横边为横线，竖边为竖线 */}
+        {/* 边缘微光拉手 */}
         <button
           type="button"
           onPointerDown={handlePointerDown}
@@ -260,7 +322,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 ? 'w-3 h-32 bg-zinc-700/90 rounded-md mx-0.5'
                 : 'w-1.5 h-20 bg-zinc-300/40 hover:bg-zinc-200/90 hover:w-2 rounded-full mx-1 shadow-[0_0_10px_rgba(255,255,255,0.3)]'
           }`}
-          title="点击展开/收起，按住拖拽自动贴附到最近边缘"
+          title="点击展开/收起，按住拖拽自动贴附到边缘"
         >
           {isExpanded && (
             <GripHorizontal
@@ -271,23 +333,50 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           )}
         </button>
 
-        {/* 展开面板：横版边缘（上/下）为水平排版，竖版边缘（左/右）为垂直竖排版 */}
+        {/* 展开控制面板 */}
         <div
           className={`transition-all duration-300 ease-out origin-center overflow-hidden flex items-center justify-center ${
             dockEdge === 'top' || dockEdge === 'bottom'
               ? isExpanded
-                ? 'max-w-xl opacity-100 scale-100'
+                ? 'max-w-2xl opacity-100 scale-100'
                 : 'max-w-0 opacity-0 scale-95 pointer-events-none'
               : isExpanded
-                ? 'max-h-[380px] opacity-100 scale-100'
+                ? 'max-h-[460px] opacity-100 scale-100'
                 : 'max-h-0 opacity-0 scale-95 pointer-events-none'
           }`}
         >
           {dockEdge === 'top' || dockEdge === 'bottom' ? (
-            /* 横向控制面板（在上下边缘呈现） */
+            /* 横向控制面板 */
             <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-3 py-1.5 rounded-lg shadow-2xl text-xs font-mono text-zinc-200 whitespace-nowrap">
+              {/* 走马灯快捷前后切换 */}
+              {artifacts.length > 1 && (
+                <div className="flex items-center gap-0.5 border-r border-zinc-700 pr-1.5 mr-1">
+                  <button
+                    type="button"
+                    disabled={!hasPrev}
+                    onClick={handlePrev}
+                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
+                    title="上一件工件 (Alt + ←)"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[10px] text-zinc-400 px-1 font-mono">
+                    {currentIndex + 1}/{artifacts.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!hasNext}
+                    onClick={handleNext}
+                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
+                    title="下一件工件 (Alt + →)"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               <span
-                className="text-[11px] text-zinc-400 max-w-[140px] truncate mr-1.5"
+                className="text-[11px] text-zinc-400 max-w-[130px] truncate mr-1.5"
                 title={artifact.meta.name}
               >
                 {artifact.meta.name}
@@ -332,18 +421,37 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 title="退出全屏展演 (按 Esc)"
               >
                 <X className="w-3.5 h-3.5" />
-                <span>退出 (Esc)</span>
+                <span>退出</span>
               </button>
             </div>
           ) : (
-            /* 纵向竖排版控制面板（在左右边缘呈现） */
+            /* 纵向竖排版控制面板 */
             <div className="flex flex-col items-center gap-2 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 p-2 rounded-lg shadow-2xl text-xs font-mono text-zinc-200">
-              <span
-                className="text-[10px] text-zinc-400 w-12 truncate text-center"
-                title={artifact.meta.name}
-              >
-                {artifact.meta.name}
-              </span>
+              {artifacts.length > 1 && (
+                <div className="flex flex-col items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={!hasPrev}
+                    onClick={handlePrev}
+                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 transition-colors text-zinc-300"
+                    title="上一件 (Alt + ←)"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 rotate-90" />
+                  </button>
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    {currentIndex + 1}/{artifacts.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!hasNext}
+                    onClick={handleNext}
+                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 transition-colors text-zinc-300"
+                    title="下一件 (Alt + →)"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                  </button>
+                </div>
+              )}
 
               <div className="w-full h-px bg-zinc-700/60" />
 

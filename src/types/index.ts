@@ -33,12 +33,13 @@ export interface ArtifactMeta {
   filename: string;
   tags: string[];
   currentRevision: number;
+  createdAt: string;
   updatedAt: string;
   rating?: number;
 }
 
 export interface Artifact {
   meta: ArtifactMeta;
-  sourceCode: string;
+  sourceCode?: string;
   posterBlobUrl?: string;
 }

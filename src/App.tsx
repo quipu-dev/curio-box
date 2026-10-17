@@ -46,7 +46,7 @@ function formatTimelineGroupKey(dateString: string): string {
     const year = d.getFullYear();
     const month = d.getMonth() + 1;
     const day = d.getDate();
-    return `${year}年 ${month.toString().padStart(2, '0')}月 ${day.toString().padStart(2, '0')}日`;
+    return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
   } catch {
     return '更早归档';
   }

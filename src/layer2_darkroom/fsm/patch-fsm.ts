@@ -97,6 +97,13 @@ export class DarkroomPatchFSM {
             tags: tagTokens,
           });
         }
+      } else if (action === 'set_description') {
+        commands.push({
+          action,
+          oldDoc: '',
+          newDoc: '',
+          description: stmt.contexts.join('\n').trim(),
+        });
       } else if (action === 'write_file') {
         commands.push({
           action,

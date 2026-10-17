@@ -1,7 +1,17 @@
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
-import { Code2, Eye, EyeOff, FileCode, Save, Sparkles, Tag as TagIcon, X } from 'lucide-react';
+import {
+  Code2,
+  Eye,
+  EyeOff,
+  FileCode,
+  MessageSquareQuote,
+  Save,
+  Sparkles,
+  Tag as TagIcon,
+  X,
+} from 'lucide-react';
 import type React from 'react';
 import { useMemo, useRef, useState } from 'react';
 
@@ -15,6 +25,7 @@ interface ArtifactComposerModalProps {
     content: string;
     name: string;
     tags: string[];
+    description?: string;
   }) => Promise<void>;
 }
 
@@ -29,6 +40,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   const [artifactName, setArtifactName] = useState<string>(() =>
     TitleSanitizerEngine.extractTitle(initialCode),
   );
+  const [artifactDesc, setArtifactDesc] = useState<string>('');
   const [rawTagsInput, setRawTagsInput] = useState<string>('形态:原生html 状态:新建');
   const [showPreview, setShowPreview] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -94,6 +106,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
         content: sourceCode,
         name: finalName,
         tags: parsedTags,
+        description: artifactDesc.trim() || undefined,
       });
       onClose();
     } catch (err: unknown) {
@@ -153,7 +166,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
         </header>
 
         {/* 元属性配置表单栏（方案 A：统一工件名称与物理文件映射） */}
-        <div className="bg-surface border-b border-border p-3 md:px-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+        <div className="bg-surface border-b border-border p-3 md:px-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
           <div className="flex flex-col gap-1">
             <label
               htmlFor="composer-artifact-name"
@@ -163,8 +176,8 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
                 <FileCode className="w-3 h-3 text-sky-400" />
                 <span>工件名称</span>
               </span>
-              <span className="text-[10px] text-muted font-normal">
-                文件: {TitleSanitizerEngine.toSafeHtmlFilename(artifactName || 'artifact')}
+              <span className="text-[10px] text-muted font-normal truncate max-w-[120px]">
+                {TitleSanitizerEngine.toSafeHtmlFilename(artifactName || 'artifact')}
               </span>
             </label>
             <input
@@ -192,6 +205,24 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               allTags={allTags}
               placeholder="形态:webgl 物理:粒子"
               className="w-full bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="composer-desc"
+              className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
+            >
+              <MessageSquareQuote className="w-3 h-3 text-amber-400" />
+              <span>研判备忘 (选填)</span>
+            </label>
+            <input
+              id="composer-desc"
+              type="text"
+              value={artifactDesc}
+              onChange={(e) => setArtifactDesc(e.target.value)}
+              placeholder="简要记录亮点或缺陷..."
+              className="bg-background border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-amber-400 font-sans"
             />
           </div>
         </div>

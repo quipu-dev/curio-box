@@ -115,6 +115,7 @@ export class GalleryStorage {
     content: string,
     name: string,
     tags: string[] = ['形态:原生html', '状态:新建'],
+    description = '',
   ): Promise<Artifact> {
     const now = new Date().toISOString();
     const newMeta: ArtifactMeta = {
@@ -122,6 +123,7 @@ export class GalleryStorage {
       name,
       filename,
       tags,
+      description: description.trim() || undefined,
       currentRevision: 1,
       createdAt: now,
       updatedAt: now,

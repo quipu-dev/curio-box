@@ -86,7 +86,7 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return artifacts.filter((a) => isArtifactUnclassified(a.meta.tags)).length;
   }, [artifacts]);
 
-  // 1. 过滤匹配（同时支持标签搜索、待定格与未分类状态筛选叠加）
+  // 1. 过滤匹配（同时支持标签搜索、名称/描述全文检索、待定格与未分类状态筛选叠加）
   const filteredArtifacts = useMemo(() => {
     return artifacts.filter((item) => {
       if (filterNeedsPoster && item.posterBlobUrl) {
@@ -95,7 +95,18 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
       if (filterUnclassified && !isArtifactUnclassified(item.meta.tags)) {
         return false;
       }
-      return TagQueryEngine.match(item.meta.tags, searchQuery);
+
+      // 标签精准与排除过滤
+      const tagMatched = TagQueryEngine.match(item.meta.tags, searchQuery);
+      if (tagMatched) return true;
+
+      // 综合描述与名称检索兜底
+      const query = searchQuery.trim().toLowerCase();
+      if (!query || query.startsWith('-')) return false;
+
+      const nameMatched = item.meta.name.toLowerCase().includes(query);
+      const descMatched = Boolean(item.meta.description?.toLowerCase().includes(query));
+      return nameMatched || descMatched;
     });
   }, [artifacts, searchQuery, filterNeedsPoster, filterUnclassified]);
 

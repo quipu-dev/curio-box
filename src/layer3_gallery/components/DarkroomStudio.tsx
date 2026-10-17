@@ -159,6 +159,14 @@ patch_file
 <替换后的新代码行>
 \`\`\`
 
+如需为工件记录研判备忘（如总结工件优缺点、改动要点），可附带 set_description 指令：
+\`\`\`act
+set_description
+\`\`\`
+\`\`\`
+动画视觉呈现极佳，但存在控制台报错或排版问题。
+\`\`\`
+
 如需为工件补充或调整标签，可附带 add_tag 指令（支持空格或换行分隔标签）：
 \`\`\`act
 add_tag
@@ -203,8 +211,10 @@ ${artifact.sourceCode}
 
       let nextCode = baseCode;
       let nextTags = [...artifact.meta.tags];
+      let nextDesc = artifact.meta.description;
       let hasCodeChange = false;
       let hasTagChange = false;
+      let hasDescChange = false;
 
       for (const cmd of commands) {
         if (cmd.action === 'patch_file' || cmd.action === 'write_file') {
@@ -213,6 +223,9 @@ ${artifact.sourceCode}
         } else if (cmd.action === 'add_tag' || cmd.action === 'remove_tag') {
           nextTags = DarkroomApplier.applyTags(nextTags, cmd);
           hasTagChange = true;
+        } else if (cmd.action === 'set_description') {
+          nextDesc = cmd.description ?? '';
+          hasDescChange = true;
         }
       }
 
@@ -236,6 +249,7 @@ ${artifact.sourceCode}
       const updatedMeta = {
         ...artifact.meta,
         tags: nextTags,
+        description: nextDesc,
         currentRevision: nextRev,
         updatedAt: new Date().toISOString(),
       };
@@ -249,10 +263,13 @@ ${artifact.sourceCode}
 
       onUpdateArtifact(updated);
       setPatchInput('');
+      const changeSummaries: string[] = [];
+      if (hasCodeChange) changeSummaries.push(`升级至 REV:${nextRev}`);
+      if (hasTagChange) changeSummaries.push('标签已更新');
+      if (hasDescChange) changeSummaries.push('研判备忘已写入');
+
       toast.success(
-        hasCodeChange
-          ? `指令已执行！升级至 REV:${nextRev}${hasTagChange ? '，标签已同步' : ''}`
-          : '标签指令已成功执行',
+        changeSummaries.length > 0 ? `指令已执行：${changeSummaries.join(' · ')}` : '指令执行完毕',
       );
       await refreshHistory();
     } catch (err: unknown) {
@@ -430,6 +447,17 @@ ${artifact.sourceCode}
               {activeTab === 'assets' && (
                 <DarkroomAssetsTab
                   tags={artifact.meta.tags}
+                  description={artifact.meta.description}
+                  onUpdateDescription={async (newDesc) => {
+                    const updatedMeta = await galleryStorage.updateArtifactMeta(
+                      artifact.meta.filename,
+                      {
+                        description: newDesc.trim() || undefined,
+                      },
+                    );
+                    onUpdateArtifact({ ...artifact, meta: updatedMeta });
+                    toast.success('研判描述已更新');
+                  }}
                   assetStats={assetStats}
                   onCacheAllAssets={handleCacheAllAssets}
                 />

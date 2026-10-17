@@ -1,6 +1,6 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import type { Artifact } from '@/types';
-import { Code2, FileText, Play, Star } from 'lucide-react';
+import { Code2, FileText, MessageSquareQuote, Play, Star } from 'lucide-react';
 import type React from 'react';
 
 interface ArtifactCardProps {
@@ -74,9 +74,24 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       {/* 紧凑模式下仅渲染极简底部信息 */}
       {compact ? (
         <div className="px-2.5 py-2 flex items-center justify-between gap-1 text-[11px] font-mono">
-          <span className="truncate font-medium text-main flex-1" title={artifact.meta.name}>
+          <span
+            className="truncate font-medium text-main flex-1"
+            title={
+              artifact.meta.description
+                ? `${artifact.meta.name} · ${artifact.meta.description}`
+                : artifact.meta.name
+            }
+          >
             {artifact.meta.name}
           </span>
+          {artifact.meta.description && (
+            <span
+              title={artifact.meta.description}
+              className="shrink-0 flex items-center text-sky-400"
+            >
+              <MessageSquareQuote className="w-3 h-3" />
+            </span>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -92,33 +107,44 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       ) : (
         /* 标准完整信息栏 */
         <div className="p-4 flex flex-col flex-1 justify-between gap-3">
-          <div className="flex justify-between items-start gap-2">
-            <div
-              className="text-sm font-semibold text-main truncate flex-1"
-              title={artifact.meta.name}
-            >
-              {artifact.meta.name}
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => onOpenInspector(artifact)}
-                className="flex items-center gap-1 text-[11px] font-mono text-muted hover:text-main border border-border px-1.5 py-0.5 rounded hover:bg-border transition-colors"
-                title="查看标本档案与元数据"
+          <div className="flex flex-col gap-1.5">
+            <div className="flex justify-between items-start gap-2">
+              <div
+                className="text-sm font-semibold text-main truncate flex-1"
+                title={artifact.meta.name}
               >
-                <FileText className="w-3 h-3" />
-                <span>档案</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenStudio(artifact)}
-                className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
-                title="打开独立暗房工作台"
-              >
-                <Code2 className="w-3 h-3" />
-                <span>暗房</span>
-              </button>
+                {artifact.meta.name}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onOpenInspector(artifact)}
+                  className="flex items-center gap-1 text-[11px] font-mono text-muted hover:text-main border border-border px-1.5 py-0.5 rounded hover:bg-border transition-colors"
+                  title="查看标本档案与元数据"
+                >
+                  <FileText className="w-3 h-3" />
+                  <span>档案</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenStudio(artifact)}
+                  className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
+                  title="打开独立暗房工作台"
+                >
+                  <Code2 className="w-3 h-3" />
+                  <span>暗房</span>
+                </button>
+              </div>
             </div>
+
+            {artifact.meta.description && (
+              <p
+                className="text-[11px] text-zinc-400 font-sans line-clamp-2 leading-relaxed"
+                title={artifact.meta.description}
+              >
+                {artifact.meta.description}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-1">

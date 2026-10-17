@@ -392,12 +392,14 @@ function MainApp() {
     content: string;
     name: string;
     tags: string[];
+    description?: string;
   }) => {
     const newArt = await galleryStorage.createArtifact(
       data.filename,
       data.content,
       data.name,
       data.tags,
+      data.description,
     );
 
     setArtifacts((prev) => [
@@ -421,6 +423,15 @@ function MainApp() {
 
   const handleUpdateRating = async (filename: string, newRating: number) => {
     const updatedMeta = await galleryStorage.updateArtifactMeta(filename, { rating: newRating });
+    setArtifacts((prev) =>
+      prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
+    );
+  };
+
+  const handleUpdateDescription = async (filename: string, newDescription: string) => {
+    const updatedMeta = await galleryStorage.updateArtifactMeta(filename, {
+      description: newDescription.trim() || undefined,
+    });
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === filename ? { ...item, meta: updatedMeta } : item)),
     );
@@ -585,6 +596,7 @@ function MainApp() {
           }}
           onUpdateTags={handleUpdateTags}
           onUpdateRating={handleUpdateRating}
+          onUpdateDescription={handleUpdateDescription}
           onRename={handleRenameArtifact}
           onDelete={handleDeleteArtifact}
           existingFilenames={existingFilenames}

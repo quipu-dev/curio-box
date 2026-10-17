@@ -16,7 +16,9 @@ import {
   FileCode,
   HardDrive,
   Layers,
+  MessageSquareQuote,
   Plus,
+  Save,
   Star,
   Tag as TagIcon,
   Trash2,
@@ -32,6 +34,7 @@ interface ArtifactInspectorDrawerProps {
   onOpenStudio: (artifact: Artifact) => void;
   onUpdateTags: (filename: string, newTags: string[]) => Promise<void>;
   onUpdateRating: (filename: string, newRating: number) => Promise<void>;
+  onUpdateDescription: (filename: string, newDescription: string) => Promise<void>;
   onRename: (oldFilename: string, newFilename: string, newName: string) => Promise<void>;
   onDelete: (filename: string) => Promise<void>;
   existingFilenames: string[];
@@ -49,6 +52,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   onOpenStudio,
   onUpdateTags,
   onUpdateRating,
+  onUpdateDescription,
   onRename,
   onDelete,
   existingFilenames,
@@ -63,14 +67,18 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [copiedCode, setCopiedCode] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(artifact.meta.name);
+  const [editDesc, setEditDesc] = useState(artifact.meta.description || '');
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [showCodePreview, setShowCodePreview] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
 
-  // 当切换工件时重置名字编辑态
+  // 当切换工件时重置状态
   useEffect(() => {
     setEditName(artifact.meta.name);
     setIsEditingName(false);
-  }, [artifact.meta.name]);
+    setEditDesc(artifact.meta.description || '');
+    setIsEditingDesc(false);
+  }, [artifact.meta.name, artifact.meta.description]);
 
   // 异步按需加载源码
   useEffect(() => {
@@ -163,6 +171,18 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`重命名失败: ${msg}`);
+    }
+  };
+
+  // 保存研判描述
+  const handleSaveDescription = async () => {
+    try {
+      await onUpdateDescription(artifact.meta.filename, editDesc);
+      setIsEditingDesc(false);
+      toast.success('工件研判描述已更新');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`更新描述失败: ${msg}`);
     }
   };
 
@@ -334,6 +354,75 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
               ))}
             </div>
           </div>
+        </div>
+
+        {/* 研判笔记与描述区块 */}
+        <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-2.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
+              <MessageSquareQuote className="w-3 h-3 text-sky-400" />
+              <span>研判备忘 / 描述</span>
+            </span>
+
+            {isEditingDesc ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleSaveDescription}
+                  className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[11px] hover:opacity-90 transition-opacity"
+                >
+                  <Save className="w-3 h-3" />
+                  <span>保存</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditDesc(artifact.meta.description || '');
+                    setIsEditingDesc(false);
+                  }}
+                  className="px-1.5 py-0.5 text-muted hover:text-main text-[11px] transition-colors"
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditingDesc(true)}
+                className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
+              >
+                <Edit2 className="w-3 h-3" />
+                <span>{artifact.meta.description ? '编辑' : '添加备忘'}</span>
+              </button>
+            )}
+          </div>
+
+          {isEditingDesc ? (
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              placeholder="记录工件特点、亮点与不足（如：流体粒子仿真流畅，但字幕排版粗糙）..."
+              rows={3}
+              className="w-full bg-surface border border-sky-400 p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none"
+            />
+          ) : artifact.meta.description ? (
+            <button
+              type="button"
+              onClick={() => setIsEditingDesc(true)}
+              className="w-full text-left text-xs font-sans text-zinc-300 leading-relaxed bg-surface/60 p-2.5 rounded border border-border/80 cursor-pointer hover:border-zinc-600 transition-colors whitespace-pre-wrap select-text"
+              title="点击编辑备忘"
+            >
+              {artifact.meta.description}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditingDesc(true)}
+              className="w-full text-left text-[11px] font-sans text-muted italic bg-surface/30 p-2.5 rounded border border-dashed border-border cursor-pointer hover:border-zinc-600 transition-colors"
+            >
+              暂未记录研判心得，点击此处快速记录...
+            </button>
+          )}
         </div>
 
         {/* 属性状态矩阵 */}

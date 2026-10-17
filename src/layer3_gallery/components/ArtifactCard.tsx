@@ -6,6 +6,7 @@ import type React from 'react';
 interface ArtifactCardProps {
   artifact: Artifact;
   compact?: boolean;
+  isSelected?: boolean;
   onOpenStage: (artifact: Artifact) => void;
   onOpenStudio: (artifact: Artifact) => void;
   onOpenInspector: (artifact: Artifact) => void;
@@ -14,12 +15,20 @@ interface ArtifactCardProps {
 export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   artifact,
   compact = false,
+  isSelected = false,
   onOpenStage,
   onOpenStudio,
   onOpenInspector,
 }) => {
   return (
-    <div className="text-left w-full bg-surface border border-border rounded overflow-hidden flex flex-col group hover:border-muted hover:-translate-y-0.5 transition-all">
+    <div
+      data-artifact-filename={artifact.meta.filename}
+      className={`scroll-mt-20 scroll-mb-6 text-left w-full bg-surface border rounded overflow-hidden flex flex-col group transition-[border-color,box-shadow,opacity] duration-150 ${
+        isSelected
+          ? 'border-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.25)] ring-1 ring-sky-500/50'
+          : 'border-border hover:border-muted'
+      }`}
+    >
       {/* 封面画幅区 */}
       <button
         type="button"

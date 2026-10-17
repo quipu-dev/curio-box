@@ -1,4 +1,5 @@
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
+import type { CardSize } from '@/layer3_gallery/hooks/useArtifactSortAndGroup';
 import { Clipboard, FolderOpen, LayoutGrid, Moon, Plus, Sun } from 'lucide-react';
 import type React from 'react';
 
@@ -14,8 +15,8 @@ interface HeaderProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   allTags?: string[];
-  gridCols: number;
-  onGridColsChange: (cols: number) => void;
+  cardSize: CardSize;
+  onCardSizeChange: (size: CardSize) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,8 +31,8 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   onToggleTheme,
   allTags,
-  gridCols = 4,
-  onGridColsChange,
+  cardSize = 'md',
+  onCardSizeChange,
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-surface border-b border-border px-6 py-4 flex flex-wrap gap-4 justify-between items-center shadow-sm">
@@ -88,26 +89,47 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* 网格列数缩放选择器 */}
-        <div className="hidden lg:flex items-center border border-border rounded overflow-hidden p-0.5 bg-background">
-          <div className="px-1.5 text-muted flex items-center" title="调整画廊网格列数">
+        {/* 卡片尺寸切换分段器 (紧凑 / 标准 / 巨幕) */}
+        <div className="hidden sm:flex items-center border border-border rounded overflow-hidden p-0.5 bg-background">
+          <div className="px-1.5 text-muted flex items-center" title="调整卡片呈现尺寸">
             <LayoutGrid className="w-3.5 h-3.5" />
           </div>
-          {[2, 3, 4, 5, 6].map((cols) => (
-            <button
-              key={cols}
-              type="button"
-              onClick={() => onGridColsChange(cols)}
-              className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
-                gridCols === cols
-                  ? 'bg-zinc-800 text-white font-bold'
-                  : 'text-muted hover:text-main'
-              }`}
-              title={`${cols} 列网格布局`}
-            >
-              {cols}
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => onCardSizeChange('sm')}
+            className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
+              cardSize === 'sm'
+                ? 'bg-zinc-800 text-white font-semibold'
+                : 'text-muted hover:text-main'
+            }`}
+            title="紧凑模式 (小)"
+          >
+            紧凑
+          </button>
+          <button
+            type="button"
+            onClick={() => onCardSizeChange('md')}
+            className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
+              cardSize === 'md'
+                ? 'bg-zinc-800 text-white font-semibold'
+                : 'text-muted hover:text-main'
+            }`}
+            title="标准模式 (中)"
+          >
+            标准
+          </button>
+          <button
+            type="button"
+            onClick={() => onCardSizeChange('lg')}
+            className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
+              cardSize === 'lg'
+                ? 'bg-zinc-800 text-white font-semibold'
+                : 'text-muted hover:text-main'
+            }`}
+            title="巨幕模式 (大)"
+          >
+            巨幕
+          </button>
         </div>
 
         <button

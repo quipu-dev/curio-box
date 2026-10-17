@@ -3,6 +3,7 @@ import type { Artifact } from '@/types';
 import { useMemo, useState } from 'react';
 
 export type SortOption = 'date-desc' | 'date-asc' | 'updated-desc' | 'rating-desc' | 'name-asc';
+export type CardSize = 'sm' | 'md' | 'lg';
 
 export interface DisplayGroup {
   key: string;
@@ -43,17 +44,18 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     } catch {}
   };
 
-  // 网格列数 (2 ~ 6)
-  const [gridCols, setGridCols] = useState<number>(() => {
-    if (typeof window === 'undefined') return 4;
-    const saved = localStorage.getItem('curio_grid_cols');
-    return saved ? Number.parseInt(saved, 10) : 4;
+  // 卡片尺寸模式：sm (紧凑: 210px) / md (标准: 280px) / lg (巨幕: 380px)
+  const [cardSize, setCardSize] = useState<CardSize>(() => {
+    if (typeof window === 'undefined') return 'md';
+    const saved = localStorage.getItem('curio_card_size');
+    if (saved === 'sm' || saved === 'md' || saved === 'lg') return saved;
+    return 'md';
   });
 
-  const handleGridColsChange = (cols: number) => {
-    setGridCols(cols);
+  const handleCardSizeChange = (size: CardSize) => {
+    setCardSize(size);
     try {
-      localStorage.setItem('curio_grid_cols', cols.toString());
+      localStorage.setItem('curio_card_size', size);
     } catch {}
   };
 
@@ -156,35 +158,28 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return groups;
   }, [sortedArtifacts, sortBy]);
 
-  // 动态网格类名计算
-  const gridClass = useMemo(() => {
-    switch (gridCols) {
-      case 2:
-        return 'grid grid-cols-1 sm:grid-cols-2 gap-6';
-      case 3:
-        return 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5';
-      case 4:
-        return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5';
-      case 5:
-        return 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4';
-      case 6:
-        return 'grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3';
-      default:
-        return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5';
-    }
-  }, [gridCols]);
+  // 动态卡片最小宽度与网格样式（支持抽屉弹出时自动少排一列，卡片比例始终稳定）
+  const gridStyle = useMemo(() => {
+    const minWidth = cardSize === 'sm' ? 210 : cardSize === 'lg' ? 380 : 280;
+    const gap = cardSize === 'sm' ? '12px' : cardSize === 'lg' ? '24px' : '16px';
+    return {
+      display: 'grid',
+      gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}px, 1fr))`,
+      gap,
+    };
+  }, [cardSize]);
 
-  const isCompactMode = gridCols >= 5;
+  const isCompactMode = cardSize === 'sm';
 
   return {
     sortBy,
     handleSortChange,
-    gridCols,
-    handleGridColsChange,
+    cardSize,
+    handleCardSizeChange,
     filteredArtifacts,
     sortedArtifacts,
     displayGroups,
-    gridClass,
+    gridStyle,
     isCompactMode,
   };
 }

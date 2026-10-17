@@ -3,7 +3,7 @@ import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
 import { ArtifactComposerModal } from '@/layer3_gallery/components/ArtifactComposerModal';
-import { ArtifactInspectorModal } from '@/layer3_gallery/components/ArtifactInspectorModal';
+import { ArtifactInspectorDrawer } from '@/layer3_gallery/components/ArtifactInspectorDrawer';
 import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { GallerySortBar } from '@/layer3_gallery/components/GallerySortBar';
@@ -37,11 +37,11 @@ function MainApp() {
   const {
     sortBy,
     handleSortChange,
-    gridCols,
-    handleGridColsChange,
+    cardSize,
+    handleCardSizeChange,
     sortedArtifacts,
     displayGroups,
-    gridClass,
+    gridStyle,
     isCompactMode,
   } = useArtifactSortAndGroup(artifacts, searchQuery);
 
@@ -58,10 +58,10 @@ function MainApp() {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // 全屏视口滚动条溢出防护
+  // 全屏视口滚动条溢出防护（抽屉式侧边栏不锁定滚动，方便边看网格边查看）
   useEffect(() => {
     const isOverlayActive = Boolean(
-      stageFilename || studioFilename || inspectingFilename || composerInitialCode !== null,
+      stageFilename || studioFilename || composerInitialCode !== null,
     );
     if (isOverlayActive) {
       const originalOverflow = document.body.style.overflow;
@@ -70,7 +70,7 @@ function MainApp() {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [stageFilename, studioFilename, inspectingFilename, composerInitialCode]);
+  }, [stageFilename, studioFilename, composerInitialCode]);
 
   const loadArtifacts = useCallback(async () => {
     const list = await galleryStorage.scanArtifacts();
@@ -175,6 +175,161 @@ function MainApp() {
     () => artifacts.find((a) => a.meta.filename === inspectingFilename) ?? null,
     [artifacts, inspectingFilename],
   );
+
+  // 计算抽屉打开时的当前排序列索引及前后切换能力
+  const inspectingIndex = useMemo(() => {
+    if (!inspectingFilename) return -1;
+    return sortedArtifacts.findIndex((a) => a.meta.filename === inspectingFilename);
+  }, [sortedArtifacts, inspectingFilename]);
+
+  const hasPrevInspector = inspectingIndex > 0;
+  const hasNextInspector = inspectingIndex !== -1 && inspectingIndex < sortedArtifacts.length - 1;
+
+  const handlePrevInspector = useCallback(() => {
+    if (hasPrevInspector) {
+      setInspectingFilename(sortedArtifacts[inspectingIndex - 1].meta.filename);
+    }
+  }, [hasPrevInspector, sortedArtifacts, inspectingIndex]);
+
+  const handleNextInspector = useCallback(() => {
+    if (hasNextInspector) {
+      setInspectingFilename(sortedArtifacts[inspectingIndex + 1].meta.filename);
+    }
+  }, [hasNextInspector, sortedArtifacts, inspectingIndex]);
+
+  // 视口自动跟焦：当选中的工件变化时，瞬时将其精准锁定在可视安全区域（零延迟跟手）
+  useEffect(() => {
+    if (!inspectingFilename) return;
+
+    const rafId = requestAnimationFrame(() => {
+      const targetEl = document.querySelector(
+        `[data-artifact-filename="${CSS.escape(inspectingFilename)}"]`,
+      );
+      if (targetEl) {
+        targetEl.scrollIntoView({
+          behavior: 'auto',
+          block: 'nearest',
+          inline: 'nearest',
+        });
+      }
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [inspectingFilename]);
+
+  // 二维物理空间最近邻键盘导航（支持真实的上下垂直移动）
+  useEffect(() => {
+    if (!inspectingFilename) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toUpperCase();
+      const isInputFocused = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
+
+      if (e.key === 'Escape') {
+        if (!isInputFocused) {
+          setInspectingFilename(null);
+        }
+        return;
+      }
+
+      if (isInputFocused) return;
+
+      // 括号快捷键保留一维线性前后切换
+      if (e.key === '[') {
+        e.preventDefault();
+        handlePrevInspector();
+        return;
+      }
+      if (e.key === ']') {
+        e.preventDefault();
+        handleNextInspector();
+        return;
+      }
+
+      const isArrow =
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight';
+
+      if (!isArrow) return;
+      e.preventDefault();
+
+      const currentCardEl = document.querySelector(
+        `[data-artifact-filename="${CSS.escape(inspectingFilename)}"]`,
+      );
+      if (!currentCardEl) return;
+
+      const currentRect = currentCardEl.getBoundingClientRect();
+      const currentCenterX = currentRect.left + currentRect.width / 2;
+      const currentCenterY = currentRect.top + currentRect.height / 2;
+
+      const allCardEls = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-artifact-filename]'),
+      );
+
+      let bestCandidate: { filename: string; score: number } | null = null;
+
+      for (const el of allCardEls) {
+        const fn = el.getAttribute('data-artifact-filename');
+        if (!fn || fn === inspectingFilename) continue;
+
+        const rect = el.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const dx = centerX - currentCenterX;
+        const dy = centerY - currentCenterY;
+
+        let isQualified = false;
+        let score = Number.POSITIVE_INFINITY;
+
+        if (e.key === 'ArrowDown') {
+          // 位于正下方且跨越至少半个卡片高度阈值
+          if (dy > 30) {
+            isQualified = true;
+            // 水平对齐加倍惩罚，确保优先垂直落至正下方同列卡片
+            score = Math.abs(dx) * 2.5 + dy;
+          }
+        } else if (e.key === 'ArrowUp') {
+          // 位于正上方
+          if (dy < -30) {
+            isQualified = true;
+            score = Math.abs(dx) * 2.5 + Math.abs(dy);
+          }
+        } else if (e.key === 'ArrowRight') {
+          // 同行或右侧
+          if (dx > 20 && Math.abs(dy) < currentRect.height * 0.8) {
+            isQualified = true;
+            score = dx + Math.abs(dy) * 2;
+          }
+        } else if (e.key === 'ArrowLeft') {
+          // 同行或左侧
+          if (dx < -20 && Math.abs(dy) < currentRect.height * 0.8) {
+            isQualified = true;
+            score = Math.abs(dx) + Math.abs(dy) * 2;
+          }
+        }
+
+        if (isQualified && (!bestCandidate || score < bestCandidate.score)) {
+          bestCandidate = { filename: fn, score };
+        }
+      }
+
+      if (bestCandidate) {
+        setInspectingFilename(bestCandidate.filename);
+      } else {
+        // 若同行已到边缘，横向移动回退为自然线性切页
+        if (e.key === 'ArrowRight') handleNextInspector();
+        if (e.key === 'ArrowLeft') handlePrevInspector();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [inspectingFilename, handlePrevInspector, handleNextInspector]);
 
   // 进入暗房或档案检视器时按需异步读取源码
   useEffect(() => {
@@ -297,7 +452,11 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-main">
+    <div
+      className={`min-h-screen flex flex-col bg-background text-main ${
+        inspectingFilename ? 'sm:pr-[480px]' : ''
+      }`}
+    >
       <Header
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -310,8 +469,8 @@ function MainApp() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         allTags={allKnownTags}
-        gridCols={gridCols}
-        onGridColsChange={handleGridColsChange}
+        cardSize={cardSize}
+        onCardSizeChange={handleCardSizeChange}
       />
 
       <main className="flex-1 p-6 md:p-8">
@@ -343,15 +502,20 @@ function MainApp() {
                   </div>
                 </div>
 
-                <div className={gridClass}>
+                <div style={gridStyle}>
                   {group.items.map((artifact) => (
                     <ArtifactCard
                       key={artifact.meta.filename}
                       artifact={artifact}
                       compact={isCompactMode}
+                      isSelected={inspectingFilename === artifact.meta.filename}
                       onOpenStage={(art) => navigateToStage(art.meta.filename)}
                       onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
-                      onOpenInspector={(art) => setInspectingFilename(art.meta.filename)}
+                      onOpenInspector={(art) =>
+                        setInspectingFilename((prev) =>
+                          prev === art.meta.filename ? null : art.meta.filename,
+                        )
+                      }
                     />
                   ))}
                 </div>
@@ -388,9 +552,9 @@ function MainApp() {
         />
       )}
 
-      {/* 标本档案与元数据检视模态框 */}
+      {/* 标本档案常驻侧边信息栏 (Inspector Drawer) */}
       {inspectingArtifact && (
-        <ArtifactInspectorModal
+        <ArtifactInspectorDrawer
           artifact={inspectingArtifact}
           onClose={() => setInspectingFilename(null)}
           onOpenStage={(art) => {
@@ -407,6 +571,10 @@ function MainApp() {
           onDelete={handleDeleteArtifact}
           existingFilenames={existingFilenames}
           allTags={allKnownTags}
+          onPrev={handlePrevInspector}
+          onNext={handleNextInspector}
+          hasPrev={hasPrevInspector}
+          hasNext={hasNextInspector}
         />
       )}
 

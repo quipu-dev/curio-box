@@ -94,13 +94,13 @@ export class GalleryStorage {
   /**
    * 确保工件存在 REV 1 创世底片，补齐断层
    */
-  public async ensureGenesisSnapshot(filename: string, initialContent: string): Promise<void> {
+  public async ensureGenesisSnapshot(artifactId: string, initialContent: string): Promise<void> {
     if (!this.dirHandle) return;
 
     try {
-      const existingRev1 = await this.loadNegativeRevision(filename, 1);
+      const existingRev1 = await this.loadNegativeRevision(artifactId, 1);
       if (!existingRev1) {
-        await this.recordNegativeRevision(filename, 1, initialContent, 'genesis', '初始版本');
+        await this.recordNegativeRevision(artifactId, 1, initialContent, 'genesis', '初始版本');
       }
     } catch (err) {
       console.warn('初始版本检验或写入异常:', err);
@@ -134,8 +134,8 @@ export class GalleryStorage {
       await writable.write(content);
       await writable.close();
 
-      // 2. 建立 REV:1 初始版本快照
-      await this.recordNegativeRevision(filename, 1, content, 'genesis', '初始版本');
+      // 2. 建立 REV:1 初始版本快照（按不可变 id 存储）
+      await this.recordNegativeRevision(newMeta.id, 1, content, 'genesis', '初始版本');
 
       // 3. 记录元数据
       await this.saveMeta(newMeta);
@@ -217,6 +217,7 @@ export class GalleryStorage {
 
   public async saveArtifactSource(
     filename: string,
+    artifactId: string,
     newContent: string,
     revision: number,
     action: 'genesis' | 'patch' | 'rollback' = 'patch',
@@ -231,7 +232,7 @@ export class GalleryStorage {
     await writable.write(newContent);
     await writable.close();
 
-    await this.recordNegativeRevision(filename, revision, newContent, action, description);
+    await this.recordNegativeRevision(artifactId, revision, newContent, action, description);
   }
 
   public async savePoster(filename: string, blob: Blob): Promise<string> {
@@ -370,40 +371,9 @@ export class GalleryStorage {
       }
     }
 
-    // 3. 迁移底片目录 (negatives)
+    // 3. 迁移封面图 (posters)，底片快照已基于不可变 ID 存储，无需任何搬迁操作
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      try {
-        const oldNegDir = await negativesDir.getDirectoryHandle(oldBase);
-        const newNegDir = await negativesDir.getDirectoryHandle(newBase, { create: true });
-
-        const entries = (
-          oldNegDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
-        ).values();
-        for await (const entry of entries) {
-          if (entry.kind === 'file') {
-            const fHandle = entry as FileSystemFileHandle;
-            const f = await fHandle.getFile();
-            const text = await f.text();
-            const destHandle = await newNegDir.getFileHandle(entry.name, { create: true });
-            const destWritable = await destHandle.createWritable();
-            await destWritable.write(text);
-            await destWritable.close();
-          }
-        }
-        if (oldBase !== newBase) {
-          await (
-            negativesDir as unknown as {
-              removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
-            }
-          ).removeEntry(oldBase, { recursive: true });
-        }
-      } catch {
-        // 原底片不存在时忽略
-      }
-
-      // 4. 迁移封面图 (posters)
       try {
         const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
         const oldPosterHandle = await postersDir.getFileHandle(`${oldBase}.webp`);
@@ -424,7 +394,7 @@ export class GalleryStorage {
       console.warn('迁移关联资源异常:', err);
     }
 
-    // 5. 更新元数据索引，透传 createdAt
+    // 4. 更新元数据索引，透传 createdAt 与不可变 id
     const allMeta = await this.readAllMeta();
     const oldMeta = allMeta[oldFilename] || {
       id: `art_${Math.random().toString(16).slice(2, 10)}`,
@@ -470,6 +440,8 @@ export class GalleryStorage {
     }
 
     const baseName = filename.replace(/\.html$/, '');
+    const allMeta = await this.readAllMeta();
+    const targetId = allMeta[filename]?.id;
 
     // 1. 删除根目录 HTML 文件
     try {
@@ -483,14 +455,16 @@ export class GalleryStorage {
     // 2. 清理关联底片与封面
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      try {
-        const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-        await (
-          negativesDir as unknown as {
-            removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
-          }
-        ).removeEntry(baseName, { recursive: true });
-      } catch {}
+      if (targetId) {
+        try {
+          const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
+          await (
+            negativesDir as unknown as {
+              removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
+            }
+          ).removeEntry(targetId, { recursive: true });
+        } catch {}
+      }
 
       try {
         const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
@@ -500,7 +474,6 @@ export class GalleryStorage {
       } catch {}
 
       // 3. 从元数据中移除
-      const allMeta = await this.readAllMeta();
       if (allMeta[filename]) {
         delete allMeta[filename];
         const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
@@ -514,7 +487,7 @@ export class GalleryStorage {
   }
 
   public async recordNegativeRevision(
-    filename: string,
+    artifactId: string,
     revision: number,
     content: string,
     action: 'genesis' | 'patch' | 'rollback' = 'patch',
@@ -523,7 +496,7 @@ export class GalleryStorage {
     if (!this.dirHandle) return;
     const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
     const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR, { create: true });
-    const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''), {
+    const baseDir = await negativesDir.getDirectoryHandle(artifactId, {
       create: true,
     });
 
@@ -566,12 +539,12 @@ export class GalleryStorage {
     }
   }
 
-  public async loadNegativeRevision(filename: string, revision: number): Promise<string | null> {
+  public async loadNegativeRevision(artifactId: string, revision: number): Promise<string | null> {
     if (!this.dirHandle) return null;
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
       const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
+      const baseDir = await negativesDir.getDirectoryHandle(artifactId);
       const revHandle = await baseDir.getFileHandle(
         `rev-${String(revision).padStart(4, '0')}.snapshot`,
       );
@@ -585,7 +558,7 @@ export class GalleryStorage {
   /**
    * 获取指定工件底片链上的所有历史修订列表
    */
-  public async listNegativeRevisions(filename: string): Promise<NegativeLedgerEntry[]> {
+  public async listNegativeRevisions(artifactId: string): Promise<NegativeLedgerEntry[]> {
     if (!this.dirHandle) {
       return [
         {
@@ -600,7 +573,7 @@ export class GalleryStorage {
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
       const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(filename.replace(/\.html$/, ''));
+      const baseDir = await negativesDir.getDirectoryHandle(artifactId);
 
       try {
         const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);

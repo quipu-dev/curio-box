@@ -76,9 +76,9 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
 
   // 加载底片链历史清单
   const refreshHistory = useCallback(async () => {
-    const list = await galleryStorage.listNegativeRevisions(artifact.meta.filename);
+    const list = await galleryStorage.listNegativeRevisions(artifact.meta.id);
     setHistoryLedger(list);
-  }, [artifact.meta.filename]);
+  }, [artifact.meta.id]);
 
   useEffect(() => {
     refreshHistory();
@@ -108,7 +108,7 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
       return;
     }
 
-    const content = await galleryStorage.loadNegativeRevision(artifact.meta.filename, targetRev);
+    const content = await galleryStorage.loadNegativeRevision(artifact.meta.id, targetRev);
     if (!content) {
       toast.error(`未能载入 REV:${targetRev} 的快照内容`);
       return;
@@ -192,7 +192,7 @@ ${artifact.sourceCode}
 
     try {
       const baseCode = activeSourceCode;
-      await galleryStorage.ensureGenesisSnapshot(artifact.meta.filename, baseCode);
+      await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
 
       const fsm = new DarkroomPatchFSM();
       const commands = fsm.parse(patchInput);
@@ -225,6 +225,7 @@ ${artifact.sourceCode}
       if (hasCodeChange) {
         await galleryStorage.saveArtifactSource(
           artifact.meta.filename,
+          artifact.meta.id,
           nextCode,
           nextRev,
           'patch',
@@ -263,7 +264,7 @@ ${artifact.sourceCode}
   // 非破坏性安全还原至指定历史底片
   const handleRestoreRevision = async (targetRev: number) => {
     const historicalContent = await galleryStorage.loadNegativeRevision(
-      artifact.meta.filename,
+      artifact.meta.id,
       targetRev,
     );
 
@@ -275,6 +276,7 @@ ${artifact.sourceCode}
     const nextRev = artifact.meta.currentRevision + 1;
     await galleryStorage.saveArtifactSource(
       artifact.meta.filename,
+      artifact.meta.id,
       historicalContent,
       nextRev,
       'rollback',

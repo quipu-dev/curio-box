@@ -1,3 +1,4 @@
+import { MetaSealEngine } from '@/layer2_darkroom/engine/meta-seal';
 import type {
   Artifact,
   ArtifactBundleMeta,
@@ -251,7 +252,7 @@ export class GalleryStorage {
     }
 
     // 3. 自愈与对齐：
-    // 3.1 针对根目录未初始化沙盒的孤立 HTML，自动创建标准自包含包 (EC-04)
+    // 3.1 针对根目录未初始化沙盒的孤立 HTML，优先从头部提取符印元数据自愈建档
     const existingFilenamesInBundles = new Set(
       Array.from(bundleMap.values()).map((m) => m.filename),
     );
@@ -261,19 +262,36 @@ export class GalleryStorage {
         try {
           const fileHandle = await this.dirHandle.getFileHandle(htmlName);
           const file = await fileHandle.getFile();
+          // 读取前 4KB 进行轻量符印探测
+          const headChunk = await file.slice(0, 4096).text();
+          const extracted = MetaSealEngine.extract(headChunk);
+
           const content = await file.text();
           const defaultName = htmlName.replace(/\.html$/, '');
+          const finalName = extracted?.name || defaultName;
+          const finalTags =
+            extracted?.tags && extracted.tags.length > 0
+              ? extracted.tags
+              : ['形态:原生html', '状态:未分类'];
+          const finalDesc = extracted?.description || '';
+
           const created = await this.createArtifact(
             htmlName,
             content,
-            defaultName,
-            ['形态:原生html', '状态:未分类'],
-            '',
+            finalName,
+            finalTags,
+            finalDesc,
           );
+
+          if (extracted?.rating) {
+            created.meta.rating = extracted.rating;
+            await this.saveMeta(created.meta);
+          }
+
           bundleMap.set(created.meta.id, created.meta);
           bundlePosterMap.set(created.meta.id, false);
         } catch (e) {
-          console.warn(`初始化孤立工件沙盒失败 [${htmlName}]:`, e);
+          console.warn(`自愈初始化孤立工件沙盒失败 [${htmlName}]:`, e);
         }
       }
     }
@@ -394,10 +412,13 @@ export class GalleryStorage {
     };
 
     if (this.dirHandle) {
-      // 1. 写入根目录 HTML
+      const pureContent = MetaSealEngine.strip(content);
+
+      // 1. 写入带有元数据符印的根目录 HTML
+      const stampedContent = MetaSealEngine.inject(pureContent, bundleMeta);
       const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
-      await writable.write(content);
+      await writable.write(stampedContent);
       await writable.close();
 
       // 2. 初始化工件沙盒目录
@@ -405,11 +426,11 @@ export class GalleryStorage {
       const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
       const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
 
-      // 3. 写入创世快照
+      // 3. 写入创世快照（沙盒底片台账仅封存纯净逻辑代码，不受元数据变动干扰）
       const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
       const revHandle = await snapshotsDir.getFileHandle('rev-0001.snapshot', { create: true });
       const snapWritable = await revHandle.createWritable();
-      await snapWritable.write(content);
+      await snapWritable.write(pureContent);
       await snapWritable.close();
 
       // 4. 写入沙盒专属 meta.json
@@ -467,14 +488,22 @@ export class GalleryStorage {
   ): Promise<void> {
     if (!this.dirHandle) return;
 
-    // 1. 写入根目录 HTML
+    const pureContent = MetaSealEngine.strip(newContent);
+
+    // 1. 动态注水最新符印后写入根目录物理 HTML
+    const existingMeta = await this.loadBundleMeta(artifactId);
+    const metaToInject = existingMeta
+      ? { ...existingMeta, currentRevision: revision }
+      : { currentRevision: revision };
+    const stampedContent = MetaSealEngine.inject(pureContent, metaToInject);
+
     const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(newContent);
+    await writable.write(stampedContent);
     await writable.close();
 
-    // 2. 写入快照与更新沙盒元档案
-    await this.recordNegativeRevision(artifactId, revision, newContent, action, description);
+    // 2. 写入沙盒快照（底片库只封存纯净代码，杜绝符印行破坏版本差异）
+    await this.recordNegativeRevision(artifactId, revision, pureContent, action, description);
   }
 
   /**
@@ -582,6 +611,22 @@ export class GalleryStorage {
         };
 
     await this.saveMeta(updated);
+
+    // 同步微调根目录 HTML 头部符印（不产生虚假代码修订快照）
+    try {
+      const fileHandle = await this.dirHandle?.getFileHandle(filename);
+      if (fileHandle) {
+        const file = await fileHandle.getFile();
+        const currentHtml = await file.text();
+        const stamped = MetaSealEngine.inject(currentHtml, updated);
+        const writable = await fileHandle.createWritable();
+        await writable.write(stamped);
+        await writable.close();
+      }
+    } catch (e) {
+      console.warn(`同步更新 HTML 文件符印失败 [${filename}]:`, e);
+    }
+
     return updated;
   }
 

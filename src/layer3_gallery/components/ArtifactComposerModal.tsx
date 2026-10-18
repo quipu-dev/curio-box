@@ -1,4 +1,5 @@
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
+import { MetaSealEngine } from '@/layer2_darkroom/engine/meta-seal';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
 import {
@@ -36,12 +37,20 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   onClose,
   onSave,
 }) => {
+  // 装配初始化时优先探测源码内部是否存在符印
+  const initialSeal = useMemo(() => MetaSealEngine.extract(initialCode), [initialCode]);
+
   const [sourceCode, setSourceCode] = useState<string>(initialCode);
-  const [artifactName, setArtifactName] = useState<string>(() =>
-    TitleSanitizerEngine.extractTitle(initialCode),
+  const [artifactName, setArtifactName] = useState<string>(
+    () => initialSeal?.name || TitleSanitizerEngine.extractTitle(initialCode),
   );
-  const [artifactDesc, setArtifactDesc] = useState<string>('');
-  const [rawTagsInput, setRawTagsInput] = useState<string>('形态:原生html 状态:新建');
+  const [artifactDesc, setArtifactDesc] = useState<string>(() => initialSeal?.description || '');
+  const [rawTagsInput, setRawTagsInput] = useState<string>(() => {
+    if (initialSeal?.tags && initialSeal.tags.length > 0) {
+      return initialSeal.tags.join(' ');
+    }
+    return '形态:原生html 状态:新建';
+  });
   const [showPreview, setShowPreview] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');

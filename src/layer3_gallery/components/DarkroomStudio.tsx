@@ -1,6 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
+import { MetaSealEngine } from '@/layer2_darkroom/engine/meta-seal';
 import { captureDisplayMediaFrame } from '@/layer2_darkroom/engine/screen-capture';
 import { DarkroomPatchFSM, type PatchSimulationResult } from '@/layer2_darkroom/fsm/patch-fsm';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
@@ -227,7 +228,7 @@ set_description
 
 当前工件【${artifact.meta.name}】(REV:${artifact.meta.currentRevision}) 源码：
 \`\`\`html
-${loadedSourceCode}
+${MetaSealEngine.strip(loadedSourceCode)}
 \`\`\``;
 
     navigator.clipboard.writeText(prompt);
@@ -287,7 +288,7 @@ ${loadedSourceCode}
         await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
 
         const hasCodeChange = pendingSimulation.hasCodeChange;
-        const nextCode = pendingSimulation.nextCode;
+        const nextCode = MetaSealEngine.strip(pendingSimulation.nextCode);
         const nextTags = pendingSimulation.nextTags;
         const nextDesc = pendingSimulation.nextDescription;
 

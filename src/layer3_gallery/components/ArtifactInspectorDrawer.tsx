@@ -1,4 +1,5 @@
 import { useToast } from '@/context/ToastContext';
+import { MetaSealEngine } from '@/layer2_darkroom/engine/meta-seal';
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
@@ -159,21 +160,27 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     toast.info(`已移除标签: ${targetTag}`);
   };
 
-  // 复制完整源码
+  // 复制完整源码：动态就地注水当前最新元数据，彻底杜绝状态过期
   const handleCopySource = () => {
-    navigator.clipboard.writeText(sourceCode);
+    if (!sourceCode) {
+      toast.warn('源码尚未载入完成，请稍候');
+      return;
+    }
+    const exportableHtml = MetaSealEngine.inject(sourceCode, artifact.meta);
+    navigator.clipboard.writeText(exportableHtml);
     setCopiedCode(true);
-    toast.success('源码已复制至剪贴板');
+    toast.success('已复制包含最新元数据的完整 HTML 源码');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 下载 HTML 文件到本地
+  // 下载 HTML 文件到本地：动态就地注水当前最新元数据
   const handleDownloadSource = () => {
     if (!sourceCode) {
       toast.warn('源码尚未载入完成，请稍候');
       return;
     }
-    const blob = new Blob([sourceCode], { type: 'text/html;charset=utf-8' });
+    const exportableHtml = MetaSealEngine.inject(sourceCode, artifact.meta);
+    const blob = new Blob([exportableHtml], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

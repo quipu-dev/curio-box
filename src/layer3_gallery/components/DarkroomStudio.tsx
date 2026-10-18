@@ -1,6 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
 import { AssetCacheEngine, type AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
+import { captureDisplayMediaFrame } from '@/layer2_darkroom/engine/screen-capture';
 import { DarkroomPatchFSM, type PatchSimulationResult } from '@/layer2_darkroom/fsm/patch-fsm';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { DarkroomAssetsTab } from '@/layer3_gallery/components/studio/DarkroomAssetsTab';
@@ -9,6 +10,7 @@ import { DarkroomDiffModal } from '@/layer3_gallery/components/studio/DarkroomDi
 import { DarkroomHistoryTab } from '@/layer3_gallery/components/studio/DarkroomHistoryTab';
 import { DarkroomPatchTab } from '@/layer3_gallery/components/studio/DarkroomPatchTab';
 import { DarkroomStudioHeader } from '@/layer3_gallery/components/studio/DarkroomStudioHeader';
+import type { CaptureMode } from '@/types';
 import type { Artifact, NegativeLedgerEntry } from '@/types';
 import { Code2, Database, History } from 'lucide-react';
 import type React from 'react';
@@ -57,7 +59,9 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshotState | null>(null);
   const [loadedSourceCode, setLoadedSourceCode] = useState<string>(artifact.sourceCode || '');
 
-  const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
+  const captureHandleRef = useRef<
+    ((mode?: Exclude<CaptureMode, 'screen'>) => Promise<Blob>) | null
+  >(null);
 
   // 异步确保暗房源码已完整载入
   useEffect(() => {
@@ -127,13 +131,20 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
     toast.info(`已退出版本检视，恢复至最新版本 (REV:${artifact.meta.currentRevision})`);
   };
 
-  const handleCapturePoster = async () => {
-    if (!captureHandleRef.current) {
-      toast.warn('请等待沙箱加载完毕后再截图');
-      return;
-    }
+  const handleCapturePoster = async (mode: CaptureMode = 'auto') => {
     try {
-      const blob = await captureHandleRef.current();
+      let blob: Blob;
+      if (mode === 'screen') {
+        toast.info('请在弹窗中选择并确认当前工件窗口以完成真实屏幕截取');
+        blob = await captureDisplayMediaFrame();
+      } else {
+        if (!captureHandleRef.current) {
+          toast.warn('请等待沙箱加载完毕后再截图');
+          return;
+        }
+        blob = await captureHandleRef.current(mode);
+      }
+
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
         ...artifact,
@@ -143,7 +154,9 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
       toast.success('封面截取并更新成功！');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`截图失败: ${msg}`);
+      if (!msg.includes('Permission denied') && !msg.includes('用户取消')) {
+        toast.error(`截图失败: ${msg}`);
+      }
     }
   };
 

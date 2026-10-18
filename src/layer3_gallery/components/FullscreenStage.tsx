@@ -1,15 +1,21 @@
 import { useToast } from '@/context/ToastContext';
 import { SandboxViewport } from '@/layer1_sandbox/SandboxViewport';
+import { captureDisplayMediaFrame } from '@/layer2_darkroom/engine/screen-capture';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
-import type { Artifact } from '@/types';
+import type { Artifact, CaptureMode } from '@/types';
 import {
   Camera,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Code2,
   GripHorizontal,
+  Layers,
   Maximize2,
   Minimize2,
+  Monitor,
+  Sparkles,
   X,
 } from 'lucide-react';
 import type React from 'react';
@@ -23,6 +29,18 @@ interface SavedDockState {
 }
 
 const DOCK_STORAGE_KEY = 'curio_dock_state_v1';
+const CAPTURE_MODE_KEY = 'curio_selected_capture_mode';
+
+const CAPTURE_OPTIONS: {
+  mode: CaptureMode;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { mode: 'auto', label: '智能自动', icon: Sparkles },
+  { mode: 'canvas', label: '硬件画布', icon: Layers },
+  { mode: 'dom', label: 'DOM 视口', icon: Camera },
+  { mode: 'screen', label: '屏幕采集', icon: Monitor },
+];
 
 function getInitialDockState(): SavedDockState {
   if (typeof window === 'undefined') {
@@ -40,9 +58,7 @@ function getInitialDockState(): SavedDockState {
         return { edge: parsed.edge, position: { x: safeX, y: safeY } };
       }
     }
-  } catch {
-    // 容错处理
-  }
+  } catch {}
   return { edge: 'top', position: { x: window.innerWidth / 2, y: 0 } };
 }
 
@@ -72,17 +88,23 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   const [dockEdge, setDockEdge] = useState<DockEdge>(initialDock.edge);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(initialDock.position);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>(() => {
+    if (typeof window === 'undefined') return 'auto';
+    return (localStorage.getItem(CAPTURE_MODE_KEY) as CaptureMode) || 'auto';
+  });
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // 惰性源码缓冲池
   const [loadedSourceCode, setLoadedSourceCode] = useState<string>(artifact.sourceCode || '');
 
   const isDraggingRef = useRef<boolean>(false);
   const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const captureHandleRef = useRef<(() => Promise<Blob>) | null>(null);
+  const captureHandleRef = useRef<
+    ((mode?: Exclude<CaptureMode, 'screen'>) => Promise<Blob>) | null
+  >(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // 走马灯索引计算
   const currentIndex = useMemo(() => {
     return artifacts.findIndex((a) => a.meta.filename === artifact.meta.filename);
   }, [artifacts, artifact.meta.filename]);
@@ -102,7 +124,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     }
   }, [hasNext, onNavigate, artifacts, currentIndex]);
 
-  // 当切换工件时，如果尚未载入源码，异步载入
   useEffect(() => {
     let isCancelled = false;
     if (artifact.sourceCode) {
@@ -111,7 +132,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       galleryStorage.loadArtifactSource(artifact.meta.filename).then((src) => {
         if (!isCancelled) {
           setLoadedSourceCode(src);
-          // 回写至工件缓存
           onUpdateArtifact({ ...artifact, sourceCode: src });
         }
       });
@@ -121,7 +141,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     };
   }, [artifact, onUpdateArtifact]);
 
-  // 监听原生全屏状态变化
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsNativeFullscreen(Boolean(document.fullscreenElement));
@@ -132,7 +151,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     };
   }, []);
 
-  // 快捷键隔离监听：Esc 退出全屏，Alt + 左右方向键走马灯切页，彻底杜绝单键与工件画布冲突
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -144,7 +162,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         return;
       }
 
-      // 严格修饰键隔离 (Alt + ArrowLeft / Alt + ArrowRight)
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         handlePrev();
@@ -160,7 +177,20 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     };
   }, [onClose, handlePrev, handleNext]);
 
-  // 拖拽手柄移动与边缘磁吸处理
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [isMenuOpen]);
+
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     isDraggingRef.current = true;
     setIsDragging(true);
@@ -224,9 +254,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
             DOCK_STORAGE_KEY,
             JSON.stringify({ edge: targetEdge, position: targetPos }),
           );
-        } catch {
-          // 容错处理
-        }
+        } catch {}
       }
     }
 
@@ -234,19 +262,23 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
     setIsDragging(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // 容错处理
-    }
+    } catch {}
   };
 
-  // 定格封印快照
-  const handleCapturePoster = async () => {
-    if (!captureHandleRef.current) {
-      toast.warn('预览尚未就绪，无法截图');
-      return;
-    }
+  const handleCapturePoster = async (mode: CaptureMode = captureMode) => {
     try {
-      const blob = await captureHandleRef.current();
+      let blob: Blob;
+      if (mode === 'screen') {
+        toast.info('请在弹窗中选择并确认当前工件窗口以完成真实屏幕截取');
+        blob = await captureDisplayMediaFrame();
+      } else {
+        if (!captureHandleRef.current) {
+          toast.warn('预览尚未就绪，无法截图');
+          return;
+        }
+        blob = await captureHandleRef.current(mode);
+      }
+
       const newUrl = await galleryStorage.savePoster(artifact.meta.filename, blob);
       const updated: Artifact = {
         ...artifact,
@@ -256,11 +288,12 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       toast.success('封面截取并更新成功！');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`截图失败: ${msg}`);
+      if (!msg.includes('Permission denied') && !msg.includes('用户取消')) {
+        toast.error(`截图失败: ${msg}`);
+      }
     }
   };
 
-  // 切换真全屏 (Fullscreen API)
   const handleToggleNativeFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       stageContainerRef.current?.requestFullscreen().catch(() => {});
@@ -274,7 +307,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       ref={stageContainerRef}
       className="dark-scope fixed inset-0 z-50 w-screen h-screen bg-black overflow-hidden select-none"
     >
-      {/* 活体展演沙箱视口 */}
       <SandboxViewport
         htmlPayload={loadedSourceCode}
         isActivated={true}
@@ -283,7 +315,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         }}
       />
 
-      {/* 悬浮浮动坞 */}
       <div
         style={{
           left: `${position.x}px`,
@@ -302,12 +333,11 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
         }`}
         onMouseEnter={() => setIsExpanded(true)}
         onMouseLeave={() => {
-          if (!isDraggingRef.current) {
+          if (!isDraggingRef.current && !isMenuOpen) {
             setIsExpanded(false);
           }
         }}
       >
-        {/* 边缘微光拉手 */}
         <button
           type="button"
           onPointerDown={handlePointerDown}
@@ -333,9 +363,8 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           )}
         </button>
 
-        {/* 展开控制面板 */}
         <div
-          className={`transition-all duration-300 ease-out origin-center overflow-hidden flex items-center justify-center ${
+          className={`transition-all duration-300 ease-out origin-center overflow-visible flex items-center justify-center ${
             dockEdge === 'top' || dockEdge === 'bottom'
               ? isExpanded
                 ? 'max-w-2xl opacity-100 scale-100'
@@ -346,9 +375,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           }`}
         >
           {dockEdge === 'top' || dockEdge === 'bottom' ? (
-            /* 横向控制面板 */
             <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-3 py-1.5 rounded-lg shadow-2xl text-xs font-mono text-zinc-200 whitespace-nowrap">
-              {/* 走马灯快捷前后切换 */}
               {artifacts.length > 1 && (
                 <div className="flex items-center gap-0.5 border-r border-zinc-700 pr-1.5 mr-1">
                   <button
@@ -382,14 +409,68 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 {artifact.meta.name}
               </span>
 
-              <button
-                type="button"
-                onClick={handleCapturePoster}
-                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
-                title="截取当前画面为封面"
-              >
-                <Camera className="w-3.5 h-3.5" />
-              </button>
+              {/* 分体截屏按钮 */}
+              <div ref={menuRef} className="relative flex items-center">
+                <div className="flex items-center bg-zinc-800/80 border border-zinc-700 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => handleCapturePoster(captureMode)}
+                    className="p-1.5 hover:bg-zinc-700 transition-colors text-zinc-300 hover:text-white flex items-center gap-1"
+                    title={`截取当前画面为封面 [${captureMode}]`}
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
+                    className="p-1 hover:bg-zinc-700 transition-colors border-l border-zinc-700 text-zinc-400 hover:text-white"
+                    title="选择截屏模式"
+                  >
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+
+                {isMenuOpen && (
+                  <div
+                    className={`absolute z-50 w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl p-1 text-[11px] font-mono text-zinc-200 ${
+                      dockEdge === 'bottom' ? 'bottom-full mb-2 left-0' : 'top-full mt-2 left-0'
+                    }`}
+                  >
+                    <div className="px-2 py-0.5 text-[9px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800 mb-0.5">
+                      捕获方式
+                    </div>
+                    {CAPTURE_OPTIONS.map((opt) => {
+                      const Icon = opt.icon;
+                      const isSel = opt.mode === captureMode;
+                      return (
+                        <button
+                          key={opt.mode}
+                          type="button"
+                          onClick={() => {
+                            setCaptureMode(opt.mode);
+                            try {
+                              localStorage.setItem(CAPTURE_MODE_KEY, opt.mode);
+                            } catch {}
+                            setIsMenuOpen(false);
+                            handleCapturePoster(opt.mode);
+                          }}
+                          className={`flex items-center justify-between w-full px-2 py-1.5 rounded transition-colors ${
+                            isSel
+                              ? 'bg-status-info-bg text-status-info font-medium'
+                              : 'hover:bg-zinc-800 text-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Icon className="w-3.5 h-3.5" />
+                            <span>{opt.label}</span>
+                          </div>
+                          {isSel && <Check className="w-3 h-3" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -425,7 +506,6 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               </button>
             </div>
           ) : (
-            /* 纵向竖排版控制面板 */
             <div className="flex flex-col items-center gap-2 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 p-2 rounded-lg shadow-2xl text-xs font-mono text-zinc-200">
               {artifacts.length > 1 && (
                 <div className="flex flex-col items-center gap-1">
@@ -457,9 +537,9 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
 
               <button
                 type="button"
-                onClick={handleCapturePoster}
+                onClick={() => handleCapturePoster(captureMode)}
                 className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
-                title="截取当前画面为封面"
+                title={`截取当前画面为封面 [${captureMode}]`}
               >
                 <Camera className="w-3.5 h-3.5" />
               </button>

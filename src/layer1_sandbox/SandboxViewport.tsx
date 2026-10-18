@@ -1,4 +1,5 @@
 import { AssetCacheEngine } from '@/layer2_darkroom/engine/asset-cache';
+import type { CaptureMode } from '@/types';
 import { Loader2, Sparkles } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -6,14 +7,16 @@ import { useEffect, useRef, useState } from 'react';
 interface SandboxViewportProps {
   htmlPayload: string;
   isActivated: boolean;
-  onCaptureReady?: (captureHandle: () => Promise<Blob>) => void;
+  onCaptureReady?: (
+    captureHandle: (mode?: Exclude<CaptureMode, 'screen'>) => Promise<Blob>,
+  ) => void;
   aspectRatio?: 'fill' | '16/9' | '4/3' | '1/1';
 }
 
 const CAPTURE_HARNESS_SCRIPT = `
 <script id="__curio_harness__">
 (function() {
-  // WebGL 截屏图元保全
+  // WebGL 截屏图元保全：劫持绘图上下文，强制开启 preserveDrawingBuffer
   const origGetContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function(type, attribs) {
     if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
@@ -22,7 +25,6 @@ const CAPTURE_HARNESS_SCRIPT = `
     return origGetContext.call(this, type, attribs);
   };
 
-  // 通知父级：沙箱内部已准备就绪并完成第一帧绘制尝试
   function notifyReady() {
     window.parent.postMessage({ type: 'CURIO_STAGE_READY' }, '*');
   }
@@ -35,28 +37,150 @@ const CAPTURE_HARNESS_SCRIPT = `
     });
   }
 
-  // 截屏通信
-  window.addEventListener('message', function(ev) {
+  // 1. 硬件 Canvas 提取：若存在多个 Canvas，按 DOM 层叠顺序离屏复合绘制
+  async function captureCanvasLayers() {
+    const canvases = Array.from(document.querySelectorAll('canvas')).filter(function(c) {
+      const rect = c.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+
+    if (canvases.length === 0) {
+      throw new Error('视口内未检测到有效的 Canvas 画布图元');
+    }
+
+    if (canvases.length === 1) {
+      return canvases[0].toDataURL('image/webp', 0.94);
+    }
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = window.innerWidth;
+    offscreen.height = window.innerHeight;
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) throw new Error('无法初始化离屏合成画布');
+
+    for (let i = 0; i < canvases.length; i++) {
+      const c = canvases[i];
+      const rect = c.getBoundingClientRect();
+      try {
+        ctx.drawImage(c, rect.left, rect.top, rect.width, rect.height);
+      } catch (err) {
+        console.warn('Canvas 图层叠加绘制异常:', err);
+      }
+    }
+    return offscreen.toDataURL('image/webp', 0.94);
+  }
+
+  // 2. 网页 DOM / SVG 全景光栅化：基于 SVG foreignObject 渲染视口真实像素
+  async function captureDomViewport() {
+    const width = window.innerWidth || 800;
+    const height = window.innerHeight || 600;
+
+    // 先克隆文档根节点，防止污染活体视口
+    const cloneDoc = document.documentElement.cloneNode(true);
+
+    // 移除注入的 harness 脚本，保持纯粹
+    const harnessEl = cloneDoc.querySelector('#__curio_harness__');
+    if (harnessEl) harnessEl.remove();
+
+    // 关键步骤：原生 Canvas 在 foreignObject 中无法直接显示，将其转换为对应 Image 元素原位替代
+    const origCanvases = document.querySelectorAll('canvas');
+    const cloneCanvases = cloneDoc.querySelectorAll('canvas');
+
+    for (let i = 0; i < origCanvases.length; i++) {
+      try {
+        const dataUrl = origCanvases[i].toDataURL('image/png');
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.style.cssText = origCanvases[i].style.cssText;
+        img.className = origCanvases[i].className;
+        img.width = origCanvases[i].width;
+        img.height = origCanvases[i].height;
+        if (cloneCanvases[i] && cloneCanvases[i].parentNode) {
+          cloneCanvases[i].parentNode.replaceChild(img, cloneCanvases[i]);
+        }
+      } catch (e) {
+        console.warn('Canvas 光栅化替代表单失败:', e);
+      }
+    }
+
+    const serializer = new XMLSerializer();
+    const htmlString = serializer.serializeToString(cloneDoc);
+
+    const svgXml = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '">' +
+      '<foreignObject width="100%" height="100%">' +
+      '<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;overflow:hidden;">' +
+      htmlString +
+      '</div></foreignObject></svg>';
+
+    const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgXml);
+
+    return new Promise(function(resolve, reject) {
+      const img = new Image();
+      img.onload = function() {
+        try {
+          const offscreen = document.createElement('canvas');
+          offscreen.width = width;
+          offscreen.height = height;
+          const ctx = offscreen.getContext('2d');
+          if (!ctx) {
+            reject(new Error('无法创建离屏光栅化画布'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(offscreen.toDataURL('image/webp', 0.94));
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = function() {
+        reject(new Error('视口 DOM 矢量化渲染失败'));
+      };
+      img.src = svgDataUrl;
+    });
+  }
+
+  // 监听宿主截屏请求
+  window.addEventListener('message', async function(ev) {
     if (!ev.data || ev.data.type !== 'CURIO_CAPTURE_REQUEST') return;
     const reqId = ev.data.requestId;
+    const mode = ev.data.mode || 'auto';
+
     try {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) {
-        window.parent.postMessage({
-          type: 'CURIO_CAPTURE_RESPONSE',
-          requestId: reqId,
-          error: '视口内未检测到 Canvas 画布'
-        }, '*');
-        return;
+      let dataUrl;
+      const canvases = document.querySelectorAll('canvas');
+
+      if (mode === 'canvas') {
+        dataUrl = await captureCanvasLayers();
+      } else if (mode === 'dom') {
+        dataUrl = await captureDomViewport();
+      } else {
+        // auto 模式：如果视口仅有主 Canvas 且无其它主要 DOM 节点，走高性能硬件直读；否则走 DOM 全景光栅化
+        if (canvases.length > 0 && document.body.children.length <= canvases.length + 2) {
+          try {
+            dataUrl = await captureCanvasLayers();
+          } catch {
+            dataUrl = await captureDomViewport();
+          }
+        } else {
+          try {
+            dataUrl = await captureDomViewport();
+          } catch {
+            if (canvases.length > 0) {
+              dataUrl = await captureCanvasLayers();
+            } else {
+              throw new Error('视口内无可捕获的内容');
+            }
+          }
+        }
       }
-      const dataUrl = canvas.toDataURL('image/webp', 0.92);
+
       window.parent.postMessage({
         type: 'CURIO_CAPTURE_RESPONSE',
         requestId: reqId,
         dataUrl: dataUrl
       }, '*');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '画布截取失败';
+      const errorMsg = err instanceof Error ? err.message : String(err);
       window.parent.postMessage({
         type: 'CURIO_CAPTURE_RESPONSE',
         requestId: reqId,
@@ -103,7 +227,6 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
     setIsLoading(true);
     setLoadingTip('正在检查资源缓存...');
 
-    // 使用 AssetCacheEngine 处理并置换已缓存的 CDN 外链
     AssetCacheEngine.resolveAndWarmupHtml(htmlPayload, (stats) => {
       if (isSubscribed && stats.total > 0) {
         setLoadingTip(`资源准备就绪 (${stats.cached}/${stats.total})，正在挂载沙箱...`);
@@ -122,7 +245,6 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
       currentObjectUrl = URL.createObjectURL(blob);
       iframe.src = currentObjectUrl;
 
-      // 兜底超时：若工件无 canvas 或未发出就绪通知，3.5s 后强制淡出加载层
       fallbackTimer = setTimeout(() => {
         if (isSubscribed) setIsLoading(false);
       }, 3500);
@@ -140,10 +262,10 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
   useEffect(() => {
     if (!onCaptureReady) return;
 
-    onCaptureReady(async () => {
+    onCaptureReady(async (mode = 'auto') => {
       const iframe = iframeRef.current;
       if (!iframe || !iframe.contentWindow) {
-        throw new Error('沙箱未运行，无法截取封面图');
+        throw new Error('沙箱视口未激活或未就绪');
       }
 
       const contentWindow = iframe.contentWindow;
@@ -153,7 +275,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
         const timeoutTimer = setTimeout(() => {
           window.removeEventListener('message', handleResponse);
           reject(new Error('画面捕获超时：沙箱内未在规定时间内响应'));
-        }, 4000);
+        }, 5000);
 
         const handleResponse = async (event: MessageEvent) => {
           if (
@@ -188,7 +310,8 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
         contentWindow.postMessage(
           {
             type: 'CURIO_CAPTURE_REQUEST',
-            requestId: requestId,
+            requestId,
+            mode,
           },
           '*',
         );
@@ -216,7 +339,6 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
             className="w-full h-full border-0 bg-transparent"
           />
 
-          {/* 加载中状态指示 */}
           {isLoading && (
             <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-3 z-20 pointer-events-none select-none">
               <div className="relative flex items-center justify-center">

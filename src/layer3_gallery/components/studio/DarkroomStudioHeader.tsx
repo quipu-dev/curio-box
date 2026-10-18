@@ -1,19 +1,25 @@
 import type { AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
-import type { Artifact } from '@/types';
+import type { Artifact, CaptureMode } from '@/types';
 import {
   ArrowLeft,
   Camera,
+  Check,
+  ChevronDown,
   Database,
   Eye,
   GitCommit,
+  Layers,
   Maximize2,
+  Monitor,
   PanelRightClose,
   PanelRightOpen,
   Play,
+  Sparkles,
   Square,
   Star,
 } from 'lucide-react';
 import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface DarkroomStudioHeaderProps {
   artifact: Artifact;
@@ -25,11 +31,45 @@ interface DarkroomStudioHeaderProps {
   onBackToGallery: () => void;
   onSetAspectRatio: (ratio: 'fill' | '16/9' | '4/3') => void;
   onToggleActivated: () => void;
-  onCapturePoster: () => void;
+  onCapturePoster: (mode: CaptureMode) => void;
   onOpenStage: () => void;
   onToggleConsole: () => void;
   onUpdateRating?: (rating: number) => void;
 }
+
+const CAPTURE_MODE_KEY = 'curio_selected_capture_mode';
+
+const CAPTURE_MODE_OPTIONS: {
+  mode: CaptureMode;
+  label: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  {
+    mode: 'auto',
+    label: '智能自动',
+    desc: '自动探测 Canvas 与 DOM 复合',
+    icon: Sparkles,
+  },
+  {
+    mode: 'canvas',
+    label: '硬件画布',
+    desc: '直接抓取 WebGL / 2D Canvas',
+    icon: Layers,
+  },
+  {
+    mode: 'dom',
+    label: '视口 DOM',
+    desc: '基于 SVG foreignObject 全景光栅化',
+    icon: Camera,
+  },
+  {
+    mode: 'screen',
+    label: '屏幕采集',
+    desc: '浏览器原生视口拾取 (终极兜底)',
+    icon: Monitor,
+  },
+];
 
 export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
   artifact,
@@ -46,6 +86,43 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
   onToggleConsole,
   onUpdateRating,
 }) => {
+  const [selectedMode, setSelectedMode] = useState<CaptureMode>(() => {
+    if (typeof window === 'undefined') return 'auto';
+    const saved = localStorage.getItem(CAPTURE_MODE_KEY) as CaptureMode;
+    return saved || 'auto';
+  });
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isDropdownOpen]);
+
+  const handleSelectMode = (mode: CaptureMode) => {
+    setSelectedMode(mode);
+    try {
+      localStorage.setItem(CAPTURE_MODE_KEY, mode);
+    } catch {}
+    setIsDropdownOpen(false);
+  };
+
+  const handleDirectCapture = () => {
+    onCapturePoster(selectedMode);
+  };
+
+  const currentOption =
+    CAPTURE_MODE_OPTIONS.find((opt) => opt.mode === selectedMode) || CAPTURE_MODE_OPTIONS[0];
+
   return (
     <header className="h-13 bg-surface border-b border-border px-4 flex justify-between items-center gap-4 text-xs font-mono shrink-0">
       <div className="flex items-center gap-3">
@@ -77,7 +154,6 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             </span>
           )}
 
-          {/* 直接展示工件当前的 Commit 说明 */}
           {artifact.meta.lastCommitMessage && viewingRevision === null && (
             <span
               className="hidden lg:flex items-center gap-1 text-[11px] text-zinc-400 bg-background px-2 py-0.5 rounded border border-border max-w-[240px] truncate"
@@ -88,7 +164,6 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             </span>
           )}
 
-          {/* 暗房内直接鉴赏星级交互 */}
           <div className="hidden sm:flex items-center gap-0.5 ml-1 bg-background px-1.5 py-0.5 rounded border border-border">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
@@ -176,16 +251,71 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
           <span>{isActivated ? '暂停' : '运行'}</span>
         </button>
 
-        <button
-          type="button"
-          onClick={onCapturePoster}
-          disabled={!isActivated}
-          className="flex items-center gap-1 border border-border px-2.5 py-1 rounded hover:bg-border disabled:opacity-40"
-          title="截取当前帧作为封面"
-        >
-          <Camera className="w-3.5 h-3.5 text-muted" />
-          <span className="hidden sm:inline">截取封面</span>
-        </button>
+        {/* 分体式截屏按钮 (Split Button) */}
+        <div ref={dropdownRef} className="relative flex items-center">
+          <div className="flex items-center border border-border rounded overflow-hidden">
+            <button
+              type="button"
+              onClick={handleDirectCapture}
+              disabled={!isActivated}
+              className="flex items-center gap-1 px-2.5 py-1 hover:bg-border disabled:opacity-40 transition-colors text-muted hover:text-main"
+              title={`截取封面 [模式: ${currentOption.label}]`}
+            >
+              <Camera className="w-3.5 h-3.5 text-muted" />
+              <span className="hidden sm:inline">截取封面</span>
+            </button>
+            <button
+              type="button"
+              disabled={!isActivated}
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              className="px-1.5 py-1 border-l border-border hover:bg-border disabled:opacity-40 transition-colors text-muted hover:text-main"
+              title="切换截屏方式"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
+
+          {/* 下拉选择弹出层 */}
+          {isDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-60 bg-surface border border-border rounded-lg shadow-2xl p-1.5 z-50 text-xs font-mono animate-in fade-in zoom-in-95">
+              <div className="px-2 py-1 text-[10px] uppercase text-muted tracking-wider border-b border-border mb-1">
+                截屏捕获模式
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {CAPTURE_MODE_OPTIONS.map((opt) => {
+                  const Icon = opt.icon;
+                  const isSelected = opt.mode === selectedMode;
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      onClick={() => {
+                        handleSelectMode(opt.mode);
+                        onCapturePoster(opt.mode);
+                      }}
+                      className={`flex items-start gap-2 px-2 py-1.5 rounded text-left transition-colors ${
+                        isSelected
+                          ? 'bg-status-info-bg text-status-info border border-status-info-border'
+                          : 'hover:bg-surface-subtle text-main border border-transparent'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold flex items-center justify-between">
+                          <span>{opt.label}</span>
+                          {isSelected && <Check className="w-3 h-3" />}
+                        </div>
+                        <div className="text-[10px] text-muted leading-tight mt-0.5">
+                          {opt.desc}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <button
           type="button"

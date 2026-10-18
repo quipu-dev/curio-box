@@ -1,3 +1,5 @@
+export type CaptureMode = 'auto' | 'canvas' | 'dom' | 'screen';
+
 export type PatchAction =
   | 'patch_file'
   | 'write_file'

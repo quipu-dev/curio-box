@@ -1,5 +1,6 @@
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
+import { buildAlbumView, resolveAlbumArtifacts } from '@/layer2_darkroom/engine/album-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { ArtifactCard } from '@/layer3_gallery/components/ArtifactCard';
@@ -9,10 +10,13 @@ import { DarkroomStudio } from '@/layer3_gallery/components/DarkroomStudio';
 import { FullscreenStage } from '@/layer3_gallery/components/FullscreenStage';
 import { GallerySortBar } from '@/layer3_gallery/components/GallerySortBar';
 import { Header } from '@/layer3_gallery/components/Header';
+import { AlbumComposerModal } from '@/layer3_gallery/components/albums/AlbumComposerModal';
+import { AlbumDetailView } from '@/layer3_gallery/components/albums/AlbumDetailView';
+import { AlbumsView } from '@/layer3_gallery/components/albums/AlbumsView';
 import { useArtifactSortAndGroup } from '@/layer3_gallery/hooks/useArtifactSortAndGroup';
 import { useGlobalDropZone } from '@/layer3_gallery/hooks/useGlobalDropZone';
 import { useHashRoute } from '@/layer3_gallery/hooks/useHashRoute';
-import type { Artifact } from '@/types';
+import type { Album, AlbumMeta, Artifact } from '@/types';
 import { Calendar, Clock, Star, UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -24,23 +28,36 @@ function MainApp() {
   const { toast } = useToast();
   const { resolvedTheme, toggleTheme } = useTheme();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [albums, setAlbums] = useState<AlbumMeta[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
+  const [isAlbumComposerOpen, setIsAlbumComposerOpen] = useState<boolean>(false);
 
   // Hash 统一视图状态机路由（单一真实数据源）
   const {
+    currentRoute,
     stageFilename,
     studioFilename,
     inspectFilename,
+    activeAlbumId,
     navigateToStage,
     navigateToStudio,
     navigateToInspect,
+    navigateToAlbums,
+    navigateToAlbumDetail,
     navigateToGallery,
   } = useHashRoute();
 
-  // 档案抽屉检视状态直接由路由单向派生，杜绝状态滞留
+  // 处于画册大盘、画册详情或在画册上下文内操作时，均属于画册视图空间
+  const isAlbumsView =
+    currentRoute.type === 'albums' ||
+    currentRoute.type === 'album-detail' ||
+    activeAlbumId !== null;
+  const isAlbumDetailView = currentRoute.type === 'album-detail' && activeAlbumId !== null;
+
+  // 档案抽屉检视状态直接由路由单向派生
   const inspectingFilename = inspectFilename;
 
   // 排序、过滤与聚合分组 Hooks
@@ -70,10 +87,10 @@ function MainApp() {
     onInvalidDrop: (msg) => toast.warn(msg),
   });
 
-  // 全屏视口滚动条溢出防护（抽屉式侧边栏不锁定滚动，方便边看网格边查看）
+  // 全屏视口滚动条溢出防护
   useEffect(() => {
     const isOverlayActive = Boolean(
-      stageFilename || studioFilename || composerInitialCode !== null,
+      stageFilename || studioFilename || composerInitialCode !== null || isAlbumComposerOpen,
     );
     if (isOverlayActive) {
       const originalOverflow = document.body.style.overflow;
@@ -82,25 +99,34 @@ function MainApp() {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [stageFilename, studioFilename, composerInitialCode]);
+  }, [stageFilename, studioFilename, composerInitialCode, isAlbumComposerOpen]);
 
   /**
-   * SWR (Stale-While-Revalidate) 两段式工作区加载：
-   * 1. 优先从 IDB 投影吐出内存快照 (< 16ms 瞬时无白屏渲染)
-   * 2. 后台静默执行磁盘 reconcile 对齐并无感合并
+   * SWR (Stale-While-Revalidate) 两段式工作区加载（工件与画册并发）：
    */
   const loadArtifactsSWR = useCallback(async () => {
-    // 阶段一：首屏秒开
-    const projected = await galleryStorage.loadProjectedArtifacts();
-    if (projected.length > 0) {
-      setArtifacts(projected);
+    // 阶段一：首屏秒开读取工件与相册投影
+    const [projectedArtifacts, projectedAlbums] = await Promise.all([
+      galleryStorage.loadProjectedArtifacts(),
+      galleryStorage.loadProjectedAlbums(),
+    ]);
+
+    if (projectedArtifacts.length > 0) {
+      setArtifacts(projectedArtifacts);
+    }
+    if (projectedAlbums.length > 0) {
+      setAlbums(projectedAlbums);
     }
 
     // 阶段二：后台物理对齐
-    await galleryStorage.reconcileWorkspace(({ type, artifacts: latest }) => {
+    galleryStorage.reconcileWorkspace(({ type, artifacts: latest }) => {
       if (type === 'updated') {
         setArtifacts(latest);
       }
+    });
+
+    galleryStorage.reconcileAlbums().then((latestAlbums) => {
+      setAlbums(latestAlbums);
     });
   }, []);
 
@@ -185,6 +211,22 @@ function MainApp() {
     return Array.from(set);
   }, [artifacts]);
 
+  // 计算带有推导封面与计数的画册视图实体
+  const albumViews: Album[] = useMemo(() => {
+    return albums.map((meta) => buildAlbumView(meta, artifacts));
+  }, [albums, artifacts]);
+
+  // 派生当前激活的画册元数据及其受限工件列表
+  const activeAlbumMeta = useMemo(() => {
+    if (!activeAlbumId) return null;
+    return albums.find((a) => a.id === activeAlbumId) ?? null;
+  }, [albums, activeAlbumId]);
+
+  const activeAlbumArtifacts = useMemo(() => {
+    if (!activeAlbumMeta) return [];
+    return resolveAlbumArtifacts(activeAlbumMeta, artifacts);
+  }, [activeAlbumMeta, artifacts]);
+
   // 派生当前活动状态工件
   const stageArtifact = useMemo(
     () => artifacts.find((a) => a.meta.filename === stageFilename) ?? null,
@@ -199,28 +241,38 @@ function MainApp() {
     [artifacts, inspectingFilename],
   );
 
-  // 计算抽屉打开时的当前排序列索引及前后切换能力
+  // 处于画册模式时，抽屉在画册收录的工件集合中切换，否则在大盘中切换
+  const contextArtifacts = useMemo(() => {
+    return activeAlbumMeta ? activeAlbumArtifacts : sortedArtifacts;
+  }, [activeAlbumMeta, activeAlbumArtifacts, sortedArtifacts]);
+
   const inspectingIndex = useMemo(() => {
     if (!inspectingFilename) return -1;
-    return sortedArtifacts.findIndex((a) => a.meta.filename === inspectingFilename);
-  }, [sortedArtifacts, inspectingFilename]);
+    return contextArtifacts.findIndex((a) => a.meta.filename === inspectingFilename);
+  }, [contextArtifacts, inspectingFilename]);
 
   const hasPrevInspector = inspectingIndex > 0;
-  const hasNextInspector = inspectingIndex !== -1 && inspectingIndex < sortedArtifacts.length - 1;
+  const hasNextInspector = inspectingIndex !== -1 && inspectingIndex < contextArtifacts.length - 1;
 
   const handlePrevInspector = useCallback(() => {
     if (hasPrevInspector) {
-      navigateToInspect(sortedArtifacts[inspectingIndex - 1].meta.filename);
+      navigateToInspect(
+        contextArtifacts[inspectingIndex - 1].meta.filename,
+        activeAlbumId ?? undefined,
+      );
     }
-  }, [hasPrevInspector, sortedArtifacts, inspectingIndex, navigateToInspect]);
+  }, [hasPrevInspector, contextArtifacts, inspectingIndex, navigateToInspect, activeAlbumId]);
 
   const handleNextInspector = useCallback(() => {
     if (hasNextInspector) {
-      navigateToInspect(sortedArtifacts[inspectingIndex + 1].meta.filename);
+      navigateToInspect(
+        contextArtifacts[inspectingIndex + 1].meta.filename,
+        activeAlbumId ?? undefined,
+      );
     }
-  }, [hasNextInspector, sortedArtifacts, inspectingIndex, navigateToInspect]);
+  }, [hasNextInspector, contextArtifacts, inspectingIndex, navigateToInspect, activeAlbumId]);
 
-  // 视口自动跟焦：当选中的工件变化时，瞬时将其精准锁定在可视安全区域（零延迟跟手）
+  // 视口自动跟焦
   useEffect(() => {
     if (!inspectingFilename) return;
 
@@ -239,140 +291,6 @@ function MainApp() {
 
     return () => cancelAnimationFrame(rafId);
   }, [inspectingFilename]);
-
-  // 二维物理空间最近邻键盘导航（支持真实的上下垂直移动）
-  useEffect(() => {
-    if (!inspectingFilename) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeTag = (document.activeElement?.tagName || '').toUpperCase();
-      const isInputFocused = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
-
-      if (e.key === 'Escape') {
-        if (!isInputFocused) {
-          navigateToGallery();
-        }
-        return;
-      }
-
-      if (isInputFocused) return;
-
-      // 括号快捷键保留一维线性前后切换
-      if (e.key === '[') {
-        e.preventDefault();
-        handlePrevInspector();
-        return;
-      }
-      if (e.key === ']') {
-        e.preventDefault();
-        handleNextInspector();
-        return;
-      }
-
-      const isArrow =
-        e.key === 'ArrowUp' ||
-        e.key === 'ArrowDown' ||
-        e.key === 'ArrowLeft' ||
-        e.key === 'ArrowRight';
-
-      if (!isArrow) return;
-      e.preventDefault();
-
-      const currentCardEl = document.querySelector(
-        `[data-artifact-filename="${CSS.escape(inspectingFilename)}"]`,
-      );
-      if (!currentCardEl) return;
-
-      const currentRect = currentCardEl.getBoundingClientRect();
-      const currentCenterX = currentRect.left + currentRect.width / 2;
-      const currentCenterY = currentRect.top + currentRect.height / 2;
-
-      const allCardEls = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-artifact-filename]'),
-      );
-
-      let bestCandidate: { filename: string; score: number } | null = null;
-
-      for (const el of allCardEls) {
-        const fn = el.getAttribute('data-artifact-filename');
-        if (!fn || fn === inspectingFilename) continue;
-
-        const rect = el.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-
-        const dx = centerX - currentCenterX;
-        const dy = centerY - currentCenterY;
-
-        let isQualified = false;
-        let score = Number.POSITIVE_INFINITY;
-
-        if (e.key === 'ArrowDown') {
-          // 位于正下方且跨越至少半个卡片高度阈值
-          if (dy > 30) {
-            isQualified = true;
-            // 水平对齐加倍惩罚，确保优先垂直落至正下方同列卡片
-            score = Math.abs(dx) * 2.5 + dy;
-          }
-        } else if (e.key === 'ArrowUp') {
-          // 位于正上方
-          if (dy < -30) {
-            isQualified = true;
-            score = Math.abs(dx) * 2.5 + Math.abs(dy);
-          }
-        } else if (e.key === 'ArrowRight') {
-          // 同行或右侧
-          if (dx > 20 && Math.abs(dy) < currentRect.height * 0.8) {
-            isQualified = true;
-            score = dx + Math.abs(dy) * 2;
-          }
-        } else if (e.key === 'ArrowLeft') {
-          // 同行或左侧
-          if (dx < -20 && Math.abs(dy) < currentRect.height * 0.8) {
-            isQualified = true;
-            score = Math.abs(dx) + Math.abs(dy) * 2;
-          }
-        }
-
-        if (isQualified && (!bestCandidate || score < bestCandidate.score)) {
-          bestCandidate = { filename: fn, score };
-        }
-      }
-
-      if (bestCandidate) {
-        navigateToInspect(bestCandidate.filename);
-      } else {
-        // 若同行已到边缘，横向移动回退为自然线性切页
-        if (e.key === 'ArrowRight') handleNextInspector();
-        if (e.key === 'ArrowLeft') handlePrevInspector();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [
-    inspectingFilename,
-    handlePrevInspector,
-    handleNextInspector,
-    navigateToInspect,
-    navigateToGallery,
-  ]);
-
-  // 进入暗房或档案检视器时按需异步读取源码
-  useEffect(() => {
-    const target = studioArtifact || inspectingArtifact;
-    if (target && !target.sourceCode) {
-      galleryStorage.loadArtifactSource(target.meta.filename).then((code) => {
-        setArtifacts((prev) =>
-          prev.map((item) =>
-            item.meta.filename === target.meta.filename ? { ...item, sourceCode: code } : item,
-          ),
-        );
-      });
-    }
-  }, [studioArtifact, inspectingArtifact]);
 
   const handleImportFromClipboard = async () => {
     try {
@@ -431,6 +349,22 @@ function MainApp() {
     ]);
   };
 
+  const handleCreateAlbum = async (albumData: Parameters<typeof galleryStorage.createAlbum>[0]) => {
+    const created = await galleryStorage.createAlbum(albumData);
+    setAlbums((prev) => [created, ...prev]);
+    toast.success(`成功创建画册【${created.title}】`);
+  };
+
+  const handleSaveAlbum = async (updatedAlbum: AlbumMeta) => {
+    await galleryStorage.saveAlbum(updatedAlbum);
+    setAlbums((prev) => prev.map((a) => (a.id === updatedAlbum.id ? updatedAlbum : a)));
+  };
+
+  const handleDeleteAlbum = async (albumId: string) => {
+    await galleryStorage.deleteAlbum(albumId);
+    setAlbums((prev) => prev.filter((a) => a.id !== albumId));
+  };
+
   const handleUpdateArtifact = (updated: Artifact) => {
     setArtifacts((prev) =>
       prev.map((item) => (item.meta.filename === updated.meta.filename ? updated : item)),
@@ -438,7 +372,6 @@ function MainApp() {
   };
 
   const handleUpdateTags = async (filename: string, newTags: string[]) => {
-    // 乐观更新：立刻在内存与 UI 中呈现
     const prevArtifacts = artifacts;
     const now = new Date().toISOString();
     setArtifacts((prev) =>
@@ -451,14 +384,13 @@ function MainApp() {
 
     try {
       await galleryStorage.updateArtifactMeta(filename, { tags: newTags });
-    } catch (err) {
-      setArtifacts(prevArtifacts); // 异常回滚
+    } catch {
+      setArtifacts(prevArtifacts);
       toast.error('更新标签失败，已还原');
     }
   };
 
   const handleUpdateRating = async (filename: string, newRating: number) => {
-    // 乐观更新：立刻点亮/熄灭星级
     const prevArtifacts = artifacts;
     const now = new Date().toISOString();
     setArtifacts((prev) =>
@@ -471,14 +403,13 @@ function MainApp() {
 
     try {
       await galleryStorage.updateArtifactMeta(filename, { rating: newRating });
-    } catch (err) {
-      setArtifacts(prevArtifacts); // 异常回滚
+    } catch {
+      setArtifacts(prevArtifacts);
       toast.error('更新评分失败，已还原');
     }
   };
 
   const handleUpdateDescription = async (filename: string, newDescription: string) => {
-    // 乐观更新：立刻在档案卡中展示新描述
     const prevArtifacts = artifacts;
     const now = new Date().toISOString();
     const trimmedDesc = newDescription.trim() || undefined;
@@ -494,8 +425,8 @@ function MainApp() {
       await galleryStorage.updateArtifactMeta(filename, {
         description: trimmedDesc,
       });
-    } catch (err) {
-      setArtifacts(prevArtifacts); // 异常回滚
+    } catch {
+      setArtifacts(prevArtifacts);
       toast.error('更新研判备忘失败，已还原');
     }
   };
@@ -534,18 +465,27 @@ function MainApp() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-main overflow-hidden relative">
-      {/* 主画廊工作区视口（当抽屉打开时，通过 sm:mr-[480px] 缩进，使其垂直滚动条精确吸附在抽屉左侧） */}
+      {/* 主画廊工作区视口 */}
       <div
         className={`flex-1 min-h-0 flex flex-col overflow-hidden transition-[margin] duration-200 ease-out ${
           inspectingFilename ? 'sm:mr-[480px]' : ''
         }`}
       >
         <Header
+          currentView={isAlbumsView ? 'albums' : 'specimens'}
+          onSwitchView={(view) => {
+            if (view === 'albums') {
+              navigateToAlbums();
+            } else {
+              navigateToGallery();
+            }
+          }}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onPickDirectory={handlePickDirectory}
           onImportFromClipboard={handleImportFromClipboard}
           onOpenNewArtifactComposer={handleOpenNewArtifact}
+          onOpenNewAlbumComposer={() => setIsAlbumComposerOpen(true)}
           hasDirectory={hasDirectory}
           pendingDirectoryName={pendingHandle?.name}
           onRequestPendingPermission={handleRequestPendingPermission}
@@ -557,83 +497,117 @@ function MainApp() {
         />
 
         <main className="flex-1 min-h-0 overflow-y-auto p-6 md:p-8 overscroll-contain">
-          <GallerySortBar
-            totalCount={artifacts.length}
-            matchedCount={sortedArtifacts.length}
-            hasDirectory={hasDirectory}
-            sortBy={sortBy}
-            onSortChange={handleSortChange}
-            filterNeedsPoster={filterNeedsPoster}
-            onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
-            needsPosterCount={needsPosterCount}
-            filterUnclassified={filterUnclassified}
-            onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
-            unclassifiedCount={unclassifiedCount}
-          />
-
-          {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
-            <div className="flex flex-col gap-10">
-              {displayGroups.map((group) => (
-                <section key={group.key} className="flex flex-col gap-4">
-                  <div className="py-2 border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
-                      {group.icon === 'star' ? (
-                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      ) : group.icon === 'clock' ? (
-                        <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      ) : (
-                        <Calendar className="w-3.5 h-3.5 text-sky-400" />
-                      )}
-                      <span>{group.key}</span>
-                    </div>
-                    <div className="text-[11px] font-mono text-muted">
-                      {group.items.length} 件工件
-                    </div>
-                  </div>
-
-                  <div style={gridStyle}>
-                    {group.items.map((artifact) => (
-                      <ArtifactCard
-                        key={artifact.meta.filename}
-                        artifact={artifact}
-                        compact={isCompactMode}
-                        isSelected={inspectingFilename === artifact.meta.filename}
-                        onOpenStage={(art) => navigateToStage(art.meta.filename)}
-                        onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
-                        onOpenInspector={(art) =>
-                          inspectingFilename === art.meta.filename
-                            ? navigateToGallery()
-                            : navigateToInspect(art.meta.filename)
-                        }
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
+          {isAlbumDetailView && activeAlbumMeta ? (
+            /* 画册详情策展工坊 */
+            <AlbumDetailView
+              album={activeAlbumMeta}
+              allArtifacts={artifacts}
+              allTags={allKnownTags}
+              inspectingFilename={inspectingFilename}
+              onBackToAlbums={navigateToAlbums}
+              onSaveAlbum={handleSaveAlbum}
+              onDeleteAlbum={handleDeleteAlbum}
+              onOpenStage={(fn) => navigateToStage(fn, activeAlbumMeta.id)}
+              onOpenStudio={(art) => navigateToStudio(art.meta.filename, activeAlbumMeta.id)}
+              onOpenInspector={(art) =>
+                inspectingFilename === art.meta.filename
+                  ? navigateToAlbumDetail(activeAlbumMeta.id)
+                  : navigateToInspect(art.meta.filename, activeAlbumMeta.id)
+              }
+            />
+          ) : isAlbumsView ? (
+            /* 策展画册展厅视图 */
+            <AlbumsView
+              albums={albumViews}
+              searchQuery={searchQuery}
+              onOpenAlbumDetail={navigateToAlbumDetail}
+              onOpenCreateModal={() => setIsAlbumComposerOpen(true)}
+            />
           ) : (
-            <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
-              <span>未匹配到符合检索条件的工件</span>
-              <span className="text-xs opacity-60">
-                {filterNeedsPoster
-                  ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
-                  : filterUnclassified
-                    ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
-                    : '尝试修改筛选词或清除过滤条件'}
-              </span>
-            </div>
+            /* 标本工件流大盘视图 */
+            <>
+              <GallerySortBar
+                totalCount={artifacts.length}
+                matchedCount={sortedArtifacts.length}
+                hasDirectory={hasDirectory}
+                sortBy={sortBy}
+                onSortChange={handleSortChange}
+                filterNeedsPoster={filterNeedsPoster}
+                onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
+                needsPosterCount={needsPosterCount}
+                filterUnclassified={filterUnclassified}
+                onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
+                unclassifiedCount={unclassifiedCount}
+              />
+
+              {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
+                <div className="flex flex-col gap-10">
+                  {displayGroups.map((group) => (
+                    <section key={group.key} className="flex flex-col gap-4">
+                      <div className="py-2 border-b border-border flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
+                          {group.icon === 'star' ? (
+                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          ) : group.icon === 'clock' ? (
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          ) : (
+                            <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                          )}
+                          <span>{group.key}</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-muted">
+                          {group.items.length} 件工件
+                        </div>
+                      </div>
+
+                      <div style={gridStyle}>
+                        {group.items.map((artifact) => (
+                          <ArtifactCard
+                            key={artifact.meta.filename}
+                            artifact={artifact}
+                            compact={isCompactMode}
+                            isSelected={inspectingFilename === artifact.meta.filename}
+                            onOpenStage={(art) => navigateToStage(art.meta.filename)}
+                            onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
+                            onOpenInspector={(art) =>
+                              inspectingFilename === art.meta.filename
+                                ? navigateToGallery()
+                                : navigateToInspect(art.meta.filename)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
+                  <span>未匹配到符合检索条件的工件</span>
+                  <span className="text-xs opacity-60">
+                    {filterNeedsPoster
+                      ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
+                      : filterUnclassified
+                        ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
+                        : '尝试修改筛选词或清除过滤条件'}
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>
 
-      {/* 活体全屏放映舞台 */}
+      {/* 活体全屏放映舞台 (若处于相册上下文则受限播放) */}
       {stageArtifact && (
         <FullscreenStage
           artifact={stageArtifact}
-          artifacts={sortedArtifacts}
-          onClose={navigateToGallery}
-          onNavigate={(filename) => navigateToStage(filename)}
-          onOpenDarkroom={(art) => navigateToStudio(art.meta.filename)}
+          artifacts={activeAlbumMeta ? activeAlbumArtifacts : sortedArtifacts}
+          albumTitle={activeAlbumMeta?.title}
+          onClose={
+            activeAlbumMeta ? () => navigateToAlbumDetail(activeAlbumMeta.id) : navigateToGallery
+          }
+          onNavigate={(filename) => navigateToStage(filename, activeAlbumId ?? undefined)}
+          onOpenDarkroom={(art) => navigateToStudio(art.meta.filename, activeAlbumId ?? undefined)}
           onUpdateArtifact={handleUpdateArtifact}
         />
       )}
@@ -642,20 +616,33 @@ function MainApp() {
       {studioArtifact && (
         <DarkroomStudio
           artifact={studioArtifact}
-          onBackToGallery={navigateToGallery}
-          onOpenStage={(art) => navigateToStage(art.meta.filename)}
+          albumTitle={activeAlbumMeta?.title}
+          onBackToGallery={
+            activeAlbumId
+              ? () => navigateToAlbumDetail(activeAlbumId)
+              : () => {
+                  if (window.history.length > 1) {
+                    window.history.back();
+                  } else {
+                    navigateToGallery();
+                  }
+                }
+          }
+          onOpenStage={(art) => navigateToStage(art.meta.filename, activeAlbumId ?? undefined)}
           onUpdateArtifact={handleUpdateArtifact}
           onUpdateRating={handleUpdateRating}
         />
       )}
 
-      {/* 标本档案常驻侧边信息栏 (Inspector Drawer) */}
+      {/* 标本档案常驻侧边信息栏 */}
       {inspectingArtifact && (
         <ArtifactInspectorDrawer
           artifact={inspectingArtifact}
-          onClose={navigateToGallery}
-          onOpenStage={(art) => navigateToStage(art.meta.filename)}
-          onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
+          onClose={
+            activeAlbumMeta ? () => navigateToAlbumDetail(activeAlbumMeta.id) : navigateToGallery
+          }
+          onOpenStage={(art) => navigateToStage(art.meta.filename, activeAlbumId ?? undefined)}
+          onOpenStudio={(art) => navigateToStudio(art.meta.filename, activeAlbumId ?? undefined)}
           onUpdateTags={handleUpdateTags}
           onUpdateRating={handleUpdateRating}
           onUpdateDescription={handleUpdateDescription}
@@ -679,6 +666,16 @@ function MainApp() {
           allTags={allKnownTags}
           onClose={() => setComposerInitialCode(null)}
           onSave={handleSaveComposerArtifact}
+        />
+      )}
+
+      {/* 画册新建模态框 */}
+      {isAlbumComposerOpen && (
+        <AlbumComposerModal
+          artifacts={artifacts}
+          allTags={allKnownTags}
+          onClose={() => setIsAlbumComposerOpen(false)}
+          onSave={handleCreateAlbum}
         />
       )}
 

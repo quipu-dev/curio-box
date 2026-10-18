@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 
 interface DarkroomStudioHeaderProps {
   artifact: Artifact;
+  albumTitle?: string;
   viewingRevision: number | null;
   assetStats: AssetCacheStats | null;
   aspectRatio: 'fill' | '16/9' | '4/3';
@@ -73,6 +74,7 @@ const CAPTURE_MODE_OPTIONS: {
 
 export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
   artifact,
+  albumTitle,
   viewingRevision,
   assetStats,
   aspectRatio,
@@ -130,15 +132,22 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
           type="button"
           onClick={onBackToGallery}
           className="flex items-center gap-1.5 px-2.5 py-1.5 border border-border rounded hover:bg-background transition-colors text-muted hover:text-main"
-          title="返回展厅画廊"
+          title="返回上一级"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>展厅</span>
+          <span>返回</span>
         </button>
 
         <div className="h-4 w-px bg-border" />
 
         <div className="flex items-center gap-2">
+          {albumTitle && (
+            <div className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-status-info bg-status-info-bg border border-status-info-border px-2 py-0.5 rounded truncate max-w-[160px]">
+              <Layers className="w-3 h-3 shrink-0" />
+              <span className="truncate">{albumTitle}</span>
+            </div>
+          )}
+
           <span className="font-bold text-sm font-sans truncate max-w-xs md:max-w-md">
             {artifact.meta.name}
           </span>

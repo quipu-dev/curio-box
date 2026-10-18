@@ -10,6 +10,8 @@ interface ArtifactCardProps {
   onOpenStage: (artifact: Artifact) => void;
   onOpenStudio: (artifact: Artifact) => void;
   onOpenInspector: (artifact: Artifact) => void;
+  badgeSlot?: React.ReactNode;
+  footerSlot?: React.ReactNode;
 }
 
 export const ArtifactCard: React.FC<ArtifactCardProps> = ({
@@ -19,6 +21,8 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   onOpenStage,
   onOpenStudio,
   onOpenInspector,
+  badgeSlot,
+  footerSlot,
 }) => {
   return (
     <div
@@ -36,6 +40,10 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
         className="w-full aspect-[4/3] bg-background border-b border-border relative overflow-hidden flex items-center justify-center cursor-pointer outline-none"
         title="点击进入全屏放映舞台"
       >
+        {badgeSlot ? (
+          <div className="absolute top-2 left-2 z-[2] flex items-center gap-1">{badgeSlot}</div>
+        ) : null}
+
         <div className="absolute top-2 right-2 flex items-center gap-1 z-[2]">
           {artifact.meta.rating && artifact.meta.rating > 0 ? (
             <div className="bg-surface border border-status-warn-border px-1.5 py-0.5 text-[10px] font-mono text-status-warn rounded flex items-center gap-0.5">
@@ -182,6 +190,8 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
               );
             })}
           </div>
+
+          {footerSlot && <div className="pt-2 border-t border-border/80">{footerSlot}</div>}
         </div>
       )}
     </div>

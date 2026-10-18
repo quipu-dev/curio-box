@@ -1,51 +1,71 @@
 import { useCallback, useEffect, useState } from 'react';
 
+export type RouteType = 'gallery' | 'stage' | 'studio' | 'inspect' | 'albums' | 'album-detail';
+
 export interface HashRouteState {
-  type: 'gallery' | 'stage' | 'studio' | 'inspect';
+  type: RouteType;
   filename: string | null;
+  albumId: string | null;
 }
 
 export function parseHashRoute(hash: string): HashRouteState {
   const clean = hash.replace(/^#\/?/, '');
   const [route, ...rest] = clean.split('/');
+
+  if (!route) {
+    return { type: 'gallery', filename: null, albumId: null };
+  }
+
+  // 1. 画册路由空间: #/albums 或 #/albums/:albumId
+  if (route === 'albums') {
+    const rawAlbumId = rest[0];
+    if (!rawAlbumId) {
+      return { type: 'albums', filename: null, albumId: null };
+    }
+
+    try {
+      const albumId = decodeURIComponent(rawAlbumId);
+      const subAction = rest[1];
+      // 支持画册上下文内的受限放映、暗房工作台与档案抽屉
+      if ((subAction === 'stage' || subAction === 'studio' || subAction === 'inspect') && rest[2]) {
+        return {
+          type: subAction,
+          albumId,
+          filename: decodeURIComponent(rest.slice(2).join('/')),
+        };
+      }
+      return { type: 'album-detail', albumId, filename: null };
+    } catch {
+      return { type: 'albums', filename: null, albumId: null };
+    }
+  }
+
+  // 2. 标本工件全局路由空间
   const encodedName = rest.join('/');
   if (encodedName) {
     try {
       const filename = decodeURIComponent(encodedName);
-      if (route === 'stage') return { type: 'stage', filename };
-      if (route === 'studio') return { type: 'studio', filename };
-      if (route === 'inspect') return { type: 'inspect', filename };
+      if (route === 'stage') return { type: 'stage', filename, albumId: null };
+      if (route === 'studio') return { type: 'studio', filename, albumId: null };
+      if (route === 'inspect') return { type: 'inspect', filename, albumId: null };
     } catch {
       // 容错处理
     }
   }
-  return { type: 'gallery', filename: null };
+
+  return { type: 'gallery', filename: null, albumId: null };
 }
 
 export function useHashRoute() {
-  const [stageFilename, setStageFilename] = useState<string | null>(null);
-  const [studioFilename, setStudioFilename] = useState<string | null>(null);
-  const [inspectFilename, setInspectFilename] = useState<string | null>(null);
+  const [currentRoute, setCurrentRoute] = useState<HashRouteState>(() => {
+    if (typeof window === 'undefined') {
+      return { type: 'gallery', filename: null, albumId: null };
+    }
+    return parseHashRoute(window.location.hash);
+  });
 
   const syncFromHash = useCallback(() => {
-    const route = parseHashRoute(window.location.hash);
-    if (route.type === 'stage') {
-      setStageFilename(route.filename);
-      setStudioFilename(null);
-      setInspectFilename(null);
-    } else if (route.type === 'studio') {
-      setStudioFilename(route.filename);
-      setStageFilename(null);
-      setInspectFilename(null);
-    } else if (route.type === 'inspect') {
-      setInspectFilename(route.filename);
-      setStageFilename(null);
-      setStudioFilename(null);
-    } else {
-      setStageFilename(null);
-      setStudioFilename(null);
-      setInspectFilename(null);
-    }
+    setCurrentRoute(parseHashRoute(window.location.hash));
   }, []);
 
   useEffect(() => {
@@ -56,38 +76,57 @@ export function useHashRoute() {
     };
   }, [syncFromHash]);
 
-  const navigateToStage = useCallback((filename: string) => {
-    window.location.hash = `#/stage/${encodeURIComponent(filename)}`;
+  const navigateToStage = useCallback((filename: string, albumId?: string) => {
+    if (albumId) {
+      window.location.hash = `#/albums/${encodeURIComponent(albumId)}/stage/${encodeURIComponent(filename)}`;
+    } else {
+      window.location.hash = `#/stage/${encodeURIComponent(filename)}`;
+    }
   }, []);
 
-  const navigateToStudio = useCallback((filename: string) => {
-    window.location.hash = `#/studio/${encodeURIComponent(filename)}`;
+  const navigateToStudio = useCallback((filename: string, albumId?: string) => {
+    if (albumId) {
+      window.location.hash = `#/albums/${encodeURIComponent(albumId)}/studio/${encodeURIComponent(filename)}`;
+    } else {
+      window.location.hash = `#/studio/${encodeURIComponent(filename)}`;
+    }
   }, []);
 
-  const navigateToInspect = useCallback((filename: string) => {
-    window.location.hash = `#/inspect/${encodeURIComponent(filename)}`;
+  const navigateToInspect = useCallback((filename: string, albumId?: string) => {
+    if (albumId) {
+      window.location.hash = `#/albums/${encodeURIComponent(albumId)}/inspect/${encodeURIComponent(filename)}`;
+    } else {
+      window.location.hash = `#/inspect/${encodeURIComponent(filename)}`;
+    }
+  }, []);
+
+  const navigateToAlbums = useCallback(() => {
+    window.location.hash = '#/albums';
+  }, []);
+
+  const navigateToAlbumDetail = useCallback((albumId: string) => {
+    window.location.hash = `#/albums/${encodeURIComponent(albumId)}`;
   }, []);
 
   const navigateToGallery = useCallback(() => {
     if (window.location.hash) {
       window.location.hash = '';
     } else {
-      setStageFilename(null);
-      setStudioFilename(null);
-      setInspectFilename(null);
+      setCurrentRoute({ type: 'gallery', filename: null, albumId: null });
     }
   }, []);
 
   return {
-    stageFilename,
-    studioFilename,
-    inspectFilename,
-    setStageFilename,
-    setStudioFilename,
-    setInspectFilename,
+    currentRoute,
+    stageFilename: currentRoute.type === 'stage' ? currentRoute.filename : null,
+    studioFilename: currentRoute.type === 'studio' ? currentRoute.filename : null,
+    inspectFilename: currentRoute.type === 'inspect' ? currentRoute.filename : null,
+    activeAlbumId: currentRoute.albumId,
     navigateToStage,
     navigateToStudio,
     navigateToInspect,
+    navigateToAlbums,
+    navigateToAlbumDetail,
     navigateToGallery,
   };
 }

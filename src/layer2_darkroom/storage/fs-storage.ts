@@ -1,21 +1,26 @@
 import { MetaSealEngine } from '@/layer2_darkroom/engine/meta-seal';
 import type {
+  AlbumMeta,
   Artifact,
   ArtifactBundleMeta,
+  CreateAlbumInput,
   NegativeLedgerEntry,
   ProjectedIndexRecord,
 } from '@/types';
+import { generateAlbumId } from '@/utils/id';
 
 const GALLERY_DIR = '.gallery';
 const ARTIFACTS_DIR = 'artifacts';
+const ALBUMS_DIR = 'albums';
 const SNAPSHOTS_DIR = 'snapshots';
 const META_FILE = 'meta.json';
 const POSTER_FILE = 'poster.webp';
 
 const IDB_NAME = 'curio_box_meta_db';
-const IDB_VERSION = 2;
+const IDB_VERSION = 3;
 const IDB_STORE_HANDLES = 'fs_handles';
 const IDB_STORE_CACHE = 'artifact_cache';
+const IDB_STORE_ALBUMS = 'album_cache';
 const IDB_ACTIVE_KEY = 'active_directory_handle';
 
 function openStorageDB(): Promise<IDBDatabase> {
@@ -29,6 +34,9 @@ function openStorageDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(IDB_STORE_CACHE)) {
         const cacheStore = db.createObjectStore(IDB_STORE_CACHE, { keyPath: 'id' });
         cacheStore.createIndex('by_filename', 'filename', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE_ALBUMS)) {
+        db.createObjectStore(IDB_STORE_ALBUMS, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -99,6 +107,47 @@ async function deleteCachedRecord(id: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE_CACHE, 'readwrite');
       tx.objectStore(IDB_STORE_CACHE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function getAllCachedAlbums(): Promise<AlbumMeta[]> {
+  try {
+    const db = await openStorageDB();
+    return await new Promise<AlbumMeta[]>((resolve) => {
+      const tx = db.transaction(IDB_STORE_ALBUMS, 'readonly');
+      const store = tx.objectStore(IDB_STORE_ALBUMS);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function putCachedAlbum(album: AlbumMeta): Promise<void> {
+  try {
+    const db = await openStorageDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_ALBUMS, 'readwrite');
+      tx.objectStore(IDB_STORE_ALBUMS).put(album);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('更新 IDB 相册缓存异常:', err);
+  }
+}
+
+async function deleteCachedAlbum(id: string): Promise<void> {
+  try {
+    const db = await openStorageDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_ALBUMS, 'readwrite');
+      tx.objectStore(IDB_STORE_ALBUMS).delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -947,6 +996,180 @@ export class GalleryStorage {
   </script>
 </body>
 </html>`,
+      },
+    ];
+  }
+
+  /* ========================================================================
+     画册存储体系 (Curated Albums Storage)
+     ======================================================================== */
+
+  /**
+   * 从 IDB 秒开加载相册元数据列表
+   */
+  public async loadProjectedAlbums(): Promise<AlbumMeta[]> {
+    if (!this.dirHandle) {
+      return this.getMockAlbums();
+    }
+    const cached = await getAllCachedAlbums();
+    if (cached.length === 0) {
+      return this.reconcileAlbums();
+    }
+    return cached.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  /**
+   * 物理扫描并对齐 .gallery/albums/ 目录
+   */
+  public async reconcileAlbums(): Promise<AlbumMeta[]> {
+    if (!this.dirHandle) {
+      return this.getMockAlbums();
+    }
+
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const albumsDir = await galleryDir.getDirectoryHandle(ALBUMS_DIR, { create: true });
+
+      const diskAlbums: AlbumMeta[] = [];
+      const diskIds = new Set<string>();
+
+      const entries = (
+        albumsDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+      ).values();
+
+      for await (const entry of entries) {
+        if (entry.kind === 'file' && entry.name.endsWith('.json')) {
+          try {
+            const fileHandle = await albumsDir.getFileHandle(entry.name);
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            const meta = JSON.parse(text) as AlbumMeta;
+            if (meta?.id && meta?.title) {
+              diskAlbums.push(meta);
+              diskIds.add(meta.id);
+              putCachedAlbum(meta).catch(() => {});
+            }
+          } catch (err) {
+            console.warn(`解析相册文件失败 [${entry.name}]:`, err);
+          }
+        }
+      }
+
+      // 清理 IDB 中已删除的相册
+      const cached = await getAllCachedAlbums();
+      for (const c of cached) {
+        if (!diskIds.has(c.id)) {
+          deleteCachedAlbum(c.id).catch(() => {});
+        }
+      }
+
+      return diskAlbums.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+    } catch (e) {
+      console.warn('对齐相册工作区失败:', e);
+      return [];
+    }
+  }
+
+  /**
+   * 创建新相册（不可变键落盘至 .gallery/albums/${albumId}.json）
+   */
+  public async createAlbum(input: CreateAlbumInput): Promise<AlbumMeta> {
+    const now = new Date().toISOString();
+    const id = generateAlbumId();
+
+    const fullAlbum: AlbumMeta = {
+      ...input,
+      schemaVersion: 1,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    } as AlbumMeta;
+
+    if (this.dirHandle) {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const albumsDir = await galleryDir.getDirectoryHandle(ALBUMS_DIR, { create: true });
+      const fileHandle = await albumsDir.getFileHandle(`${id}.json`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(fullAlbum, null, 2));
+      await writable.close();
+
+      await putCachedAlbum(fullAlbum);
+    }
+
+    return fullAlbum;
+  }
+
+  /**
+   * 保存相册元数据（重命名或调序只重写内容，严禁触发物理重命名）
+   */
+  public async saveAlbum(album: AlbumMeta): Promise<void> {
+    const updated: AlbumMeta = {
+      ...album,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (this.dirHandle) {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const albumsDir = await galleryDir.getDirectoryHandle(ALBUMS_DIR, { create: true });
+      const fileHandle = await albumsDir.getFileHandle(`${updated.id}.json`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(updated, null, 2));
+      await writable.close();
+    }
+
+    await putCachedAlbum(updated);
+  }
+
+  /**
+   * 读取指定相册元数据
+   */
+  public async loadAlbum(albumId: string): Promise<AlbumMeta | null> {
+    if (!this.dirHandle) {
+      return this.getMockAlbums().find((a) => a.id === albumId) ?? null;
+    }
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+      const albumsDir = await galleryDir.getDirectoryHandle(ALBUMS_DIR);
+      const fileHandle = await albumsDir.getFileHandle(`${albumId}.json`);
+      const file = await fileHandle.getFile();
+      return JSON.parse(await file.text()) as AlbumMeta;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 删除相册（彻底删除 .gallery/albums/<id>.json，不影响任何工件物理文件）
+   */
+  public async deleteAlbum(albumId: string): Promise<void> {
+    if (this.dirHandle) {
+      try {
+        const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+        const albumsDir = await galleryDir.getDirectoryHandle(ALBUMS_DIR);
+        await (
+          albumsDir as unknown as { removeEntry: (name: string) => Promise<void> }
+        ).removeEntry(`${albumId}.json`);
+      } catch (err) {
+        console.warn(`从磁盘删除相册失败 [${albumId}]:`, err);
+      }
+    }
+    await deleteCachedAlbum(albumId);
+  }
+
+  public getMockAlbums(): AlbumMeta[] {
+    return [
+      {
+        schemaVersion: 1,
+        id: 'alb_demo_fluids',
+        title: '计算流体动力学专题',
+        description: '收录二维纳维-斯托克斯与粒子流体交互仿真标本',
+        type: 'manual',
+        rating: 5,
+        items: [{ artifactId: 'art_fluid2d', note: '第一幕：Navier-Stokes 二维基准' }],
+        createdAt: '2025-02-28T12:00:00Z',
+        updatedAt: '2025-02-28T12:00:00Z',
       },
     ];
   }

@@ -201,20 +201,18 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingTip, setLoadingTip] = useState<string>('正在解析工件代码...');
+  const [activeObjectUrl, setActiveObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
     if (!isActivated) {
-      iframe.src = 'about:blank';
+      setActiveObjectUrl(null);
       setIsLoading(false);
       return;
     }
 
     let isSubscribed = true;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-    let currentObjectUrl: string | null = null;
+    let createdUrl: string | null = null;
 
     const handleReadyMessage = (ev: MessageEvent) => {
       if (ev.data?.type === 'CURIO_STAGE_READY') {
@@ -242,8 +240,8 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
       }
 
       const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
-      currentObjectUrl = URL.createObjectURL(blob);
-      iframe.src = currentObjectUrl;
+      createdUrl = URL.createObjectURL(blob);
+      setActiveObjectUrl(createdUrl);
 
       fallbackTimer = setTimeout(() => {
         if (isSubscribed) setIsLoading(false);
@@ -254,8 +252,9 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
       isSubscribed = false;
       if (fallbackTimer) clearTimeout(fallbackTimer);
       window.removeEventListener('message', handleReadyMessage);
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-      iframe.src = 'about:blank';
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
     };
   }, [htmlPayload, isActivated]);
 
@@ -332,12 +331,18 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
     <div className="dark-scope relative w-full h-full bg-black/95 overflow-hidden rounded border border-border flex items-center justify-center">
       {isActivated ? (
         <div className={`relative flex items-center justify-center ${aspectClass}`}>
-          <iframe
-            ref={iframeRef}
-            title="工件预览沙箱"
-            sandbox="allow-scripts"
-            className="w-full h-full border-0 bg-transparent"
-          />
+          {activeObjectUrl ? (
+            <iframe
+              key={activeObjectUrl}
+              ref={iframeRef}
+              src={activeObjectUrl}
+              title="工件预览沙箱"
+              sandbox="allow-scripts"
+              className="w-full h-full border-0 bg-transparent"
+            />
+          ) : (
+            <div className="w-full h-full bg-transparent" />
+          )}
 
           {isLoading && (
             <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-3 z-20 pointer-events-none select-none">

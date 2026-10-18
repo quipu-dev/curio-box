@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface DarkroomStudioProps {
   artifact: Artifact | null;
+  albumTitle?: string;
   onBackToGallery: () => void;
   onOpenStage: (artifact: Artifact) => void;
   onUpdateArtifact: (updated: Artifact) => void;
@@ -34,6 +35,7 @@ interface ViewingSnapshotState {
 
 export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   artifact,
+  albumTitle,
   onBackToGallery,
   onOpenStage,
   onUpdateArtifact,
@@ -425,6 +427,7 @@ ${MetaSealEngine.strip(loadedSourceCode)}
     <div className="dark-scope fixed inset-0 z-40 bg-background text-main flex flex-col overflow-hidden select-none">
       <DarkroomStudioHeader
         artifact={artifact}
+        albumTitle={albumTitle}
         viewingRevision={viewingSnapshot?.revision ?? null}
         assetStats={assetStats}
         aspectRatio={aspectRatio}

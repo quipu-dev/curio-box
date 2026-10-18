@@ -65,6 +65,7 @@ function getInitialDockState(): SavedDockState {
 interface FullscreenStageProps {
   artifact: Artifact | null;
   artifacts?: Artifact[];
+  albumTitle?: string;
   onClose: () => void;
   onNavigate?: (filename: string) => void;
   onOpenDarkroom: (artifact: Artifact) => void;
@@ -74,6 +75,7 @@ interface FullscreenStageProps {
 export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   artifact,
   artifacts = [],
+  albumTitle,
   onClose,
   onNavigate,
   onOpenDarkroom,
@@ -403,9 +405,15 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               )}
 
               <span
-                className="text-[11px] text-zinc-400 max-w-[130px] truncate mr-1.5"
-                title={artifact.meta.name}
+                className="text-[11px] text-zinc-400 max-w-[180px] truncate mr-1.5"
+                title={albumTitle ? `《${albumTitle}》· ${artifact.meta.name}` : artifact.meta.name}
               >
+                {albumTitle ? (
+                  <>
+                    <span className="text-sky-300 font-semibold">{albumTitle}</span>
+                    <span className="text-zinc-500 mx-1">·</span>
+                  </>
+                ) : null}
                 {artifact.meta.name}
               </span>
 

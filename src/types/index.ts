@@ -78,3 +78,52 @@ export interface ProjectedIndexRecord {
   meta: ArtifactBundleMeta;
   hasPoster: boolean;
 }
+
+export type AlbumSortOption =
+  | 'date-desc'
+  | 'date-asc'
+  | 'updated-desc'
+  | 'rating-desc'
+  | 'name-asc';
+
+export type AlbumType = 'manual' | 'smart';
+
+export interface AlbumBaseMeta {
+  schemaVersion: 1;
+  id: string; // 机器不可变键，格式: alb_<timestamp36><random36>
+  title: string; // 用户可见的画册名称（可任意修改，不触发底层文件重命名）
+  description?: string; // 策展导言 / 专题备注
+  type: AlbumType;
+  rating?: number; // 画册评级 (1-5)
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+}
+
+export interface ManualAlbumItem {
+  artifactId: string; // 引用工件沙盒 ID (并非 filename，解耦重命名)
+  note?: string; // 该工件在画册内的专属小注
+}
+
+export interface ManualAlbumMeta extends AlbumBaseMeta {
+  type: 'manual';
+  items: ManualAlbumItem[];
+  customCoverArtifactId?: string; // 用户手动指定的封面工件 ID (可选)
+}
+
+export interface SmartAlbumMeta extends AlbumBaseMeta {
+  type: 'smart';
+  query: string; // 标签查询表达式，如 "形态:webgl 物理:粒子"
+  sortBy?: AlbumSortOption; // 智能册内排序规则
+}
+
+export type AlbumMeta = ManualAlbumMeta | SmartAlbumMeta;
+
+export type CreateAlbumInput =
+  | Omit<ManualAlbumMeta, 'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'>
+  | Omit<SmartAlbumMeta, 'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'>;
+
+export interface Album {
+  meta: AlbumMeta;
+  coverBlobUrl?: string; // 计算出的封面 Blob URL
+  artifactCount: number; // 当前解析生效的工件总数
+}

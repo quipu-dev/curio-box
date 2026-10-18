@@ -12,7 +12,7 @@ interface HeaderProps {
   hasDirectory: boolean;
   pendingDirectoryName?: string;
   onRequestPendingPermission?: () => void;
-  theme: 'dark' | 'light';
+  resolvedTheme: 'dark' | 'light';
   onToggleTheme: () => void;
   allTags?: string[];
   cardSize: CardSize;
@@ -28,7 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   hasDirectory,
   pendingDirectoryName,
   onRequestPendingPermission,
-  theme,
+  resolvedTheme,
   onToggleTheme,
   allTags,
   cardSize = 'md',
@@ -72,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center gap-1.5 border border-border px-3 py-1.5 text-xs font-mono hover:bg-border transition-colors rounded text-muted hover:text-main"
           title="从剪贴板读取代码并导入"
         >
-          <Clipboard className="w-3.5 h-3.5 text-sky-400" />
+          <Clipboard className="w-3.5 h-3.5 text-status-info" />
           <span>剪贴板导入</span>
         </button>
 
@@ -81,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onRequestPendingPermission}
-            className="flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/40 text-sky-400 px-3 py-1.5 text-xs font-mono hover:bg-sky-500/20 transition-colors rounded animate-pulse"
+            className="flex items-center gap-1.5 bg-status-info-bg border border-status-info-border text-status-info px-3 py-1.5 text-xs font-mono hover:bg-status-info-bg transition-colors rounded animate-pulse"
             title="点击恢复上次目录的访问授权"
           >
             <FolderOpen className="w-3.5 h-3.5" />
@@ -99,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onCardSizeChange('sm')}
             className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
               cardSize === 'sm'
-                ? 'bg-zinc-800 text-white font-semibold'
+                ? 'bg-accent text-accent-text font-semibold'
                 : 'text-muted hover:text-main'
             }`}
             title="紧凑模式 (小)"
@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onCardSizeChange('md')}
             className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
               cardSize === 'md'
-                ? 'bg-zinc-800 text-white font-semibold'
+                ? 'bg-accent text-accent-text font-semibold'
                 : 'text-muted hover:text-main'
             }`}
             title="标准模式 (中)"
@@ -123,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onCardSizeChange('lg')}
             className={`px-2 py-1 text-xs font-mono rounded transition-colors ${
               cardSize === 'lg'
-                ? 'bg-zinc-800 text-white font-semibold'
+                ? 'bg-accent text-accent-text font-semibold'
                 : 'text-muted hover:text-main'
             }`}
             title="巨幕模式 (大)"
@@ -144,13 +144,13 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onToggleTheme}
-          className="border border-border p-2 text-xs hover:bg-border transition-colors rounded"
-          title="切换深色/浅色模式"
+          className="border border-border p-2 text-xs hover:bg-border transition-colors rounded text-muted hover:text-main"
+          title={resolvedTheme === 'dark' ? '切换至浅色模式' : '切换至深色模式'}
         >
-          {theme === 'dark' ? (
-            <Sun className="w-3.5 h-3.5 text-yellow-400" />
+          {resolvedTheme === 'dark' ? (
+            <Sun className="w-3.5 h-3.5 text-status-warn" />
           ) : (
-            <Moon className="w-3.5 h-3.5 text-zinc-600" />
+            <Moon className="w-3.5 h-3.5 text-sky-600" />
           )}
         </button>
       </div>

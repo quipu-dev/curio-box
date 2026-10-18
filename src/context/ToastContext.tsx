@@ -82,28 +82,30 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             key={item.id}
             className={`pointer-events-auto flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-lg border shadow-xl backdrop-blur-md text-xs font-mono transition-all animate-in fade-in slide-in-from-bottom-2 ${
               item.type === 'success'
-                ? 'bg-zinc-900/95 border-emerald-500/50 text-emerald-300'
+                ? 'bg-surface/95 border-status-success-border text-status-success'
                 : item.type === 'error'
-                  ? 'bg-zinc-900/95 border-red-500/50 text-red-300'
+                  ? 'bg-surface/95 border-status-error-border text-status-error'
                   : item.type === 'warn'
-                    ? 'bg-zinc-900/95 border-amber-500/50 text-amber-300'
-                    : 'bg-zinc-900/95 border-zinc-700/80 text-zinc-200'
+                    ? 'bg-surface/95 border-status-warn-border text-status-warn'
+                    : 'bg-surface/95 border-border text-main'
             }`}
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {item.type === 'success' && (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-status-success" />
               )}
-              {item.type === 'error' && <XCircle className="w-4 h-4 shrink-0 text-red-400" />}
-              {item.type === 'warn' && <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />}
-              {item.type === 'info' && <Info className="w-4 h-4 shrink-0 text-sky-400" />}
+              {item.type === 'error' && <XCircle className="w-4 h-4 shrink-0 text-status-error" />}
+              {item.type === 'warn' && (
+                <AlertCircle className="w-4 h-4 shrink-0 text-status-warn" />
+              )}
+              {item.type === 'info' && <Info className="w-4 h-4 shrink-0 text-status-info" />}
               <span className="truncate">{item.message}</span>
             </div>
 
             <button
               type="button"
               onClick={() => removeToast(item.id)}
-              className="p-1 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors shrink-0"
+              className="p-1 text-muted hover:text-main rounded hover:bg-surface-subtle transition-colors shrink-0"
               title="关闭通知"
             >
               <X className="w-3.5 h-3.5" />

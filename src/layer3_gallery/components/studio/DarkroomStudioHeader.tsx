@@ -5,6 +5,7 @@ import {
   Camera,
   Database,
   Eye,
+  GitCommit,
   Maximize2,
   PanelRightClose,
   PanelRightOpen,
@@ -63,13 +64,24 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
           </span>
 
           {viewingRevision !== null ? (
-            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 animate-pulse">
+            <span className="bg-status-warn-bg text-status-warn border border-status-warn-border px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 animate-pulse">
               <Eye className="w-3 h-3" />
               <span>检视中: REV:{viewingRevision}</span>
             </span>
           ) : (
             <span className="bg-tag px-2 py-0.5 rounded text-[11px] font-semibold text-main border border-border">
               REV:{artifact.meta.currentRevision}
+            </span>
+          )}
+
+          {/* 直接展示工件当前的 Commit 说明 */}
+          {artifact.meta.lastCommitMessage && viewingRevision === null && (
+            <span
+              className="hidden lg:flex items-center gap-1 text-[11px] text-zinc-400 bg-background px-2 py-0.5 rounded border border-border max-w-[240px] truncate"
+              title={`当前版本 Commit: ${artifact.meta.lastCommitMessage}`}
+            >
+              <GitCommit className="w-3 h-3 text-status-success shrink-0" />
+              <span className="truncate">{artifact.meta.lastCommitMessage}</span>
             </span>
           )}
         </div>
@@ -80,8 +92,8 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
           <div
             className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded border text-[11px] ${
               assetStats.cached === assetStats.total
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-400'
+                ? 'border-status-success-border bg-status-success-bg text-status-success'
+                : 'border-status-warn-border bg-status-warn-bg text-status-warn'
             }`}
           >
             <Database className="w-3 h-3" />
@@ -96,7 +108,9 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             type="button"
             onClick={() => onSetAspectRatio('fill')}
             className={`px-2 py-1 text-[11px] ${
-              aspectRatio === 'fill' ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-800/40 text-muted'
+              aspectRatio === 'fill'
+                ? 'bg-accent text-accent-text'
+                : 'hover:bg-surface-subtle text-muted'
             }`}
           >
             自由铺满
@@ -105,7 +119,9 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             type="button"
             onClick={() => onSetAspectRatio('16/9')}
             className={`px-2 py-1 text-[11px] ${
-              aspectRatio === '16/9' ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-800/40 text-muted'
+              aspectRatio === '16/9'
+                ? 'bg-accent text-accent-text'
+                : 'hover:bg-surface-subtle text-muted'
             }`}
           >
             16:9
@@ -114,7 +130,9 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             type="button"
             onClick={() => onSetAspectRatio('4/3')}
             className={`px-2 py-1 text-[11px] ${
-              aspectRatio === '4/3' ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-800/40 text-muted'
+              aspectRatio === '4/3'
+                ? 'bg-accent text-accent-text'
+                : 'hover:bg-surface-subtle text-muted'
             }`}
           >
             4:3
@@ -126,8 +144,8 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
           onClick={onToggleActivated}
           className={`flex items-center gap-1 px-2.5 py-1 rounded transition-colors text-xs font-mono ${
             isActivated
-              ? 'bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30'
-              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+              ? 'bg-status-error-bg text-status-error border border-status-error-border hover:bg-status-error-bg'
+              : 'bg-status-success-bg text-status-success border border-status-success-border hover:bg-emerald-500/30'
           }`}
         >
           {isActivated ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}

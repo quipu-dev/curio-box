@@ -126,6 +126,7 @@ export class GalleryStorage {
       filename,
       tags,
       description: description.trim() || undefined,
+      lastCommitMessage: '初始版本',
       currentRevision: 1,
       createdAt: now,
       updatedAt: now,

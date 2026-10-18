@@ -117,12 +117,12 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in">
+    <div className="fixed inset-0 z-50 bg-surface-overlay backdrop-blur-sm flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in">
       <div className="w-full max-w-6xl h-[90vh] bg-surface border border-border rounded-lg shadow-2xl flex flex-col overflow-hidden text-main">
         {/* 顶部标题栏 */}
         <header className="h-14 bg-background border-b border-border px-4 md:px-6 flex justify-between items-center gap-4 shrink-0 font-mono text-xs">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-sky-500/10 border border-sky-500/30 text-sky-400 rounded">
+            <div className="p-1.5 bg-status-info-bg border border-status-info-border text-status-info rounded">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
@@ -173,7 +173,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               className="text-[10px] uppercase text-muted tracking-wider flex items-center justify-between"
             >
               <span className="flex items-center gap-1">
-                <FileCode className="w-3 h-3 text-sky-400" />
+                <FileCode className="w-3 h-3 text-status-info" />
                 <span>工件名称</span>
               </span>
               <span className="text-[10px] text-muted font-normal truncate max-w-[120px]">
@@ -195,7 +195,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               htmlFor="composer-tags"
               className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
             >
-              <TagIcon className="w-3 h-3 text-emerald-400" />
+              <TagIcon className="w-3 h-3 text-status-success" />
               <span>分类标签 (空格分隔)</span>
             </label>
             <TagAutocompleteInput
@@ -213,7 +213,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
               htmlFor="composer-desc"
               className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1"
             >
-              <MessageSquareQuote className="w-3 h-3 text-amber-400" />
+              <MessageSquareQuote className="w-3 h-3 text-status-warn" />
               <span>研判备忘 (选填)</span>
             </label>
             <input
@@ -228,7 +228,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
         </div>
 
         {errorMsg && (
-          <div className="bg-red-500/10 border-b border-red-500/30 text-red-400 px-6 py-2 text-xs font-mono">
+          <div className="bg-status-error-bg border-b border-status-error-border text-status-error px-6 py-2 text-xs font-mono">
             ⚠️ {errorMsg}
           </div>
         )}
@@ -239,7 +239,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
           <div className="flex-1 flex flex-col bg-code text-zinc-300 overflow-hidden border-b md:border-b-0 md:border-r border-border">
             <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex justify-between items-center text-[11px] font-mono text-zinc-400 shrink-0">
               <span className="flex items-center gap-1.5">
-                <Code2 className="w-3.5 h-3.5 text-sky-400" />
+                <Code2 className="w-3.5 h-3.5 text-status-info" />
                 <span>HTML / WebGL / Canvas 单文件源码</span>
               </span>
               <span>
@@ -276,7 +276,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
           {showPreview && (
             <div className="w-full md:w-1/2 flex flex-col bg-black overflow-hidden">
               <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex items-center justify-between text-[11px] font-mono text-zinc-400 shrink-0">
-                <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="flex items-center gap-1.5 text-status-success">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>实时预览</span>
                 </span>

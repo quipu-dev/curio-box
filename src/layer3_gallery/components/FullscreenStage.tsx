@@ -272,7 +272,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
   return (
     <div
       ref={stageContainerRef}
-      className="fixed inset-0 z-50 w-screen h-screen bg-black overflow-hidden select-none"
+      className="dark-scope fixed inset-0 z-50 w-screen h-screen bg-black overflow-hidden select-none"
     >
       {/* 活体展演沙箱视口 */}
       <SandboxViewport
@@ -355,7 +355,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                     type="button"
                     disabled={!hasPrev}
                     onClick={handlePrev}
-                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
+                    className="p-1 hover:bg-surface-subtle rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
                     title="上一件工件 (Alt + ←)"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
@@ -367,7 +367,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                     type="button"
                     disabled={!hasNext}
                     onClick={handleNext}
-                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
+                    className="p-1 hover:bg-surface-subtle rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-zinc-300 hover:text-white"
                     title="下一件工件 (Alt + →)"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -385,7 +385,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={handleCapturePoster}
-                className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
+                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
                 title="截取当前画面为封面"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -397,14 +397,14 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 className="flex items-center gap-1 px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-[11px] text-zinc-200"
                 title="打开差量暗房 (Negative Chain)"
               >
-                <Code2 className="w-3.5 h-3.5 text-sky-400" />
+                <Code2 className="w-3.5 h-3.5 text-status-info" />
                 <span>暗房</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleToggleNativeFullscreen}
-                className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
+                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
                 title={isNativeFullscreen ? '退出系统真实全屏' : '进入系统真实全屏'}
               >
                 {isNativeFullscreen ? (
@@ -417,7 +417,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex items-center gap-1 px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded transition-colors text-[11px]"
+                className="flex items-center gap-1 px-2 py-1 bg-status-error-bg hover:bg-status-error-bg text-status-error rounded transition-colors text-[11px]"
                 title="退出全屏展演 (按 Esc)"
               >
                 <X className="w-3.5 h-3.5" />
@@ -433,7 +433,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                     type="button"
                     disabled={!hasPrev}
                     onClick={handlePrev}
-                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 transition-colors text-zinc-300"
+                    className="p-1 hover:bg-surface-subtle rounded disabled:opacity-30 transition-colors text-zinc-300"
                     title="上一件 (Alt + ←)"
                   >
                     <ChevronLeft className="w-3.5 h-3.5 rotate-90" />
@@ -445,7 +445,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                     type="button"
                     disabled={!hasNext}
                     onClick={handleNext}
-                    className="p-1 hover:bg-zinc-800 rounded disabled:opacity-30 transition-colors text-zinc-300"
+                    className="p-1 hover:bg-surface-subtle rounded disabled:opacity-30 transition-colors text-zinc-300"
                     title="下一件 (Alt + →)"
                   >
                     <ChevronRight className="w-3.5 h-3.5 rotate-90" />
@@ -458,7 +458,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={handleCapturePoster}
-                className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
+                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
                 title="截取当前画面为封面"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -470,13 +470,13 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-zinc-200"
                 title="打开差量暗房 (Negative Chain)"
               >
-                <Code2 className="w-3.5 h-3.5 text-sky-400" />
+                <Code2 className="w-3.5 h-3.5 text-status-info" />
               </button>
 
               <button
                 type="button"
                 onClick={handleToggleNativeFullscreen}
-                className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-300 hover:text-white"
+                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
                 title={isNativeFullscreen ? '退出系统真实全屏' : '进入系统真实全屏'}
               >
                 {isNativeFullscreen ? (
@@ -489,7 +489,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded transition-colors"
+                className="p-1.5 bg-status-error-bg hover:bg-status-error-bg text-status-error rounded transition-colors"
                 title="退出全屏展演 (按 Esc)"
               >
                 <X className="w-3.5 h-3.5" />

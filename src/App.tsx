@@ -1,3 +1,4 @@
+import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
@@ -21,12 +22,12 @@ interface WindowWithFSA extends Window {
 
 function MainApp() {
   const { toast } = useToast();
+  const { resolvedTheme, toggleTheme } = useTheme();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [inspectingFilename, setInspectingFilename] = useState<string | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
 
   // Hash 路由挂载与同步
@@ -59,10 +60,6 @@ function MainApp() {
     },
     onInvalidDrop: (msg) => toast.warn(msg),
   });
-
-  useEffect(() => {
-    document.body.setAttribute('data-theme', theme);
-  }, [theme]);
 
   // 全屏视口滚动条溢出防护（抽屉式侧边栏不锁定滚动，方便边看网格边查看）
   useEffect(() => {
@@ -146,10 +143,6 @@ function MainApp() {
         toast.error('选择目录失败');
       }
     }
-  };
-
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
   const existingFilenames = useMemo(() => {
@@ -509,95 +502,98 @@ function MainApp() {
   };
 
   return (
-    <div
-      className={`min-h-screen flex flex-col bg-background text-main ${
-        inspectingFilename ? 'sm:pr-[480px]' : ''
-      }`}
-    >
-      <Header
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onPickDirectory={handlePickDirectory}
-        onImportFromClipboard={handleImportFromClipboard}
-        onOpenNewArtifactComposer={handleOpenNewArtifact}
-        hasDirectory={hasDirectory}
-        pendingDirectoryName={pendingHandle?.name}
-        onRequestPendingPermission={handleRequestPendingPermission}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-        allTags={allKnownTags}
-        cardSize={cardSize}
-        onCardSizeChange={handleCardSizeChange}
-      />
-
-      <main className="flex-1 p-6 md:p-8">
-        <GallerySortBar
-          totalCount={artifacts.length}
-          matchedCount={sortedArtifacts.length}
+    <div className="h-screen w-screen flex flex-col bg-background text-main overflow-hidden relative">
+      {/* 主画廊工作区视口（当抽屉打开时，通过 sm:mr-[480px] 缩进，使其垂直滚动条精确吸附在抽屉左侧） */}
+      <div
+        className={`flex-1 min-h-0 flex flex-col overflow-hidden transition-[margin] duration-200 ease-out ${
+          inspectingFilename ? 'sm:mr-[480px]' : ''
+        }`}
+      >
+        <Header
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onPickDirectory={handlePickDirectory}
+          onImportFromClipboard={handleImportFromClipboard}
+          onOpenNewArtifactComposer={handleOpenNewArtifact}
           hasDirectory={hasDirectory}
-          sortBy={sortBy}
-          onSortChange={handleSortChange}
-          filterNeedsPoster={filterNeedsPoster}
-          onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
-          needsPosterCount={needsPosterCount}
-          filterUnclassified={filterUnclassified}
-          onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
-          unclassifiedCount={unclassifiedCount}
+          pendingDirectoryName={pendingHandle?.name}
+          onRequestPendingPermission={handleRequestPendingPermission}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={toggleTheme}
+          allTags={allKnownTags}
+          cardSize={cardSize}
+          onCardSizeChange={handleCardSizeChange}
         />
 
-        {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
-          <div className="flex flex-col gap-10">
-            {displayGroups.map((group) => (
-              <section key={group.key} className="flex flex-col gap-4">
-                <div className="py-2 border-b border-border flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
-                    {group.icon === 'star' ? (
-                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    ) : group.icon === 'clock' ? (
-                      <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    ) : (
-                      <Calendar className="w-3.5 h-3.5 text-sky-400" />
-                    )}
-                    <span>{group.key}</span>
-                  </div>
-                  <div className="text-[11px] font-mono text-muted">
-                    {group.items.length} 件工件
-                  </div>
-                </div>
+        <main className="flex-1 min-h-0 overflow-y-auto p-6 md:p-8 overscroll-contain">
+          <GallerySortBar
+            totalCount={artifacts.length}
+            matchedCount={sortedArtifacts.length}
+            hasDirectory={hasDirectory}
+            sortBy={sortBy}
+            onSortChange={handleSortChange}
+            filterNeedsPoster={filterNeedsPoster}
+            onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
+            needsPosterCount={needsPosterCount}
+            filterUnclassified={filterUnclassified}
+            onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
+            unclassifiedCount={unclassifiedCount}
+          />
 
-                <div style={gridStyle}>
-                  {group.items.map((artifact) => (
-                    <ArtifactCard
-                      key={artifact.meta.filename}
-                      artifact={artifact}
-                      compact={isCompactMode}
-                      isSelected={inspectingFilename === artifact.meta.filename}
-                      onOpenStage={(art) => navigateToStage(art.meta.filename)}
-                      onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
-                      onOpenInspector={(art) =>
-                        setInspectingFilename((prev) =>
-                          prev === art.meta.filename ? null : art.meta.filename,
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
-            <span>未匹配到符合检索条件的工件</span>
-            <span className="text-xs opacity-60">
-              {filterNeedsPoster
-                ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
-                : filterUnclassified
-                  ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
-                  : '尝试修改筛选词或清除过滤条件'}
-            </span>
-          </div>
-        )}
-      </main>
+          {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
+            <div className="flex flex-col gap-10">
+              {displayGroups.map((group) => (
+                <section key={group.key} className="flex flex-col gap-4">
+                  <div className="py-2 border-b border-border flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
+                      {group.icon === 'star' ? (
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                      ) : group.icon === 'clock' ? (
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      ) : (
+                        <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                      )}
+                      <span>{group.key}</span>
+                    </div>
+                    <div className="text-[11px] font-mono text-muted">
+                      {group.items.length} 件工件
+                    </div>
+                  </div>
+
+                  <div style={gridStyle}>
+                    {group.items.map((artifact) => (
+                      <ArtifactCard
+                        key={artifact.meta.filename}
+                        artifact={artifact}
+                        compact={isCompactMode}
+                        isSelected={inspectingFilename === artifact.meta.filename}
+                        onOpenStage={(art) => navigateToStage(art.meta.filename)}
+                        onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
+                        onOpenInspector={(art) =>
+                          setInspectingFilename((prev) =>
+                            prev === art.meta.filename ? null : art.meta.filename,
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
+              <span>未匹配到符合检索条件的工件</span>
+              <span className="text-xs opacity-60">
+                {filterNeedsPoster
+                  ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
+                  : filterUnclassified
+                    ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
+                    : '尝试修改筛选词或清除过滤条件'}
+              </span>
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* 活体全屏放映舞台 */}
       {stageArtifact && (
@@ -676,9 +672,11 @@ function MainApp() {
 
 export function App() {
   return (
-    <ToastProvider>
-      <MainApp />
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <MainApp />
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

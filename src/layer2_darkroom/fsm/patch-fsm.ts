@@ -9,9 +9,11 @@ export interface PatchSimulationResult {
   nextCode: string;
   nextTags: string[];
   nextDescription?: string;
+  nextCommitMessage?: string;
   hasCodeChange: boolean;
   hasTagChange: boolean;
   hasDescChange: boolean;
+  hasCommitChange: boolean;
   executedCommands: PatchCommand[];
 }
 
@@ -102,6 +104,13 @@ export class DarkroomPatchFSM {
             tags: tagTokens,
           });
         }
+      } else if (action === 'commit') {
+        commands.push({
+          action,
+          oldDoc: '',
+          newDoc: '',
+          commitMessage: stmt.contexts.join('\n').trim(),
+        });
       } else if (action === 'set_description') {
         commands.push({
           action,
@@ -196,10 +205,12 @@ export const DarkroomApplier = {
     let tempCode = baseCode;
     let tempTags = [...baseTags];
     let tempDesc = baseDescription;
+    let tempCommitMessage: string | undefined;
 
     let hasCodeChange = false;
     let hasTagChange = false;
     let hasDescChange = false;
+    let hasCommitChange = false;
 
     for (let idx = 0; idx < commands.length; idx++) {
       const cmd = commands[idx];
@@ -215,6 +226,9 @@ export const DarkroomApplier = {
       } else if (cmd.action === 'set_description') {
         tempDesc = cmd.description ?? '';
         hasDescChange = true;
+      } else if (cmd.action === 'commit') {
+        tempCommitMessage = cmd.commitMessage ?? '';
+        hasCommitChange = true;
       }
     }
 
@@ -222,9 +236,11 @@ export const DarkroomApplier = {
       nextCode: tempCode,
       nextTags: tempTags,
       nextDescription: tempDesc,
+      nextCommitMessage: tempCommitMessage,
       hasCodeChange,
       hasTagChange,
       hasDescChange,
+      hasCommitChange,
       executedCommands: commands,
     };
   },

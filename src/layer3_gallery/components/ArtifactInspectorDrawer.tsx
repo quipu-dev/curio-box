@@ -3,7 +3,7 @@ import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
-import type { Artifact } from '@/types';
+import type { Artifact, NegativeLedgerEntry } from '@/types';
 import {
   Calendar,
   Check,
@@ -11,10 +11,13 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  Download,
   Edit2,
   Eye,
   FileCode,
+  GitCommit,
   HardDrive,
+  History,
   Layers,
   Loader2,
   MessageSquareQuote,
@@ -72,8 +75,9 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [editDesc, setEditDesc] = useState(artifact.meta.description || '');
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [isSavingDesc, setIsSavingDesc] = useState(false);
-  const [showCodePreview, setShowCodePreview] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
+  const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
 
   // 当切换工件时重置状态
   useEffect(() => {
@@ -83,7 +87,21 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     setEditDesc(artifact.meta.description || '');
     setIsEditingDesc(false);
     setIsSavingDesc(false);
+    setShowHistory(false);
   }, [artifact.meta.name, artifact.meta.description]);
+
+  // 加载该工件的历史提交台账
+  useEffect(() => {
+    let isCancelled = false;
+    galleryStorage.listNegativeRevisions(artifact.meta.id).then((list) => {
+      if (!isCancelled) {
+        setHistoryLedger(list);
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [artifact.meta.id]);
 
   // 异步按需加载源码
   useEffect(() => {
@@ -149,6 +167,24 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     setCopiedCode(true);
     toast.success('源码已复制至剪贴板');
     setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  // 下载 HTML 文件到本地
+  const handleDownloadSource = () => {
+    if (!sourceCode) {
+      toast.warn('源码尚未载入完成，请稍候');
+      return;
+    }
+    const blob = new Blob([sourceCode], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = artifact.meta.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`已开始下载 ${artifact.meta.filename}`);
   };
 
   // 保存重命名（带主线程让步与状态机锁）
@@ -228,7 +264,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
       {/* 顶部标题栏 */}
       <header className="h-14 bg-background/90 border-b border-border px-4 flex justify-between items-center gap-3 shrink-0 font-mono text-xs">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1.5 bg-sky-500/10 border border-sky-500/30 text-sky-400 rounded shrink-0">
+          <div className="p-1.5 bg-status-info-bg border border-status-info-border text-status-info rounded shrink-0">
             <FileCode className="w-4 h-4" />
           </div>
           <div className="truncate">
@@ -269,14 +305,14 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
             className="flex items-center gap-1 px-2 py-1.5 bg-background border border-border rounded hover:bg-surface text-xs font-mono transition-colors"
             title="全屏放映舞台"
           >
-            <Eye className="w-3.5 h-3.5 text-sky-400" />
+            <Eye className="w-3.5 h-3.5 text-status-info" />
             <span className="hidden sm:inline">放映</span>
           </button>
 
           <button
             type="button"
             onClick={() => onOpenStudio(artifact)}
-            className="flex items-center gap-1 px-2 py-1.5 bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded hover:bg-sky-500/30 text-xs font-mono transition-colors"
+            className="flex items-center gap-1 px-2 py-1.5 bg-status-info-bg text-status-info border border-status-info-border rounded hover:bg-sky-500/30 text-xs font-mono transition-colors"
             title="进入暗房工作台"
           >
             <Code2 className="w-3.5 h-3.5" />
@@ -294,8 +330,8 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
         </div>
       </header>
 
-      {/* 核心检视内容 */}
-      <div className="flex-1 p-4 md:p-5 flex flex-col gap-4 overflow-y-auto font-mono text-xs">
+      {/* 核心检视内容（添加 min-h-0 解决 flex 子项溢出不触发滚动的问题） */}
+      <div className="flex-1 min-h-0 p-4 md:p-5 flex flex-col gap-4 overflow-y-auto font-mono text-xs overscroll-contain">
         {/* 名称与评分卡片 */}
         <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-3">
           <div className="flex-1 min-w-0">
@@ -372,8 +408,8 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
                   <Star
                     className={`w-4 h-4 transition-colors ${
                       star <= (artifact.meta.rating || 0)
-                        ? 'fill-amber-400 text-amber-400'
-                        : 'text-zinc-600 hover:text-amber-300'
+                        ? 'fill-amber-400 text-status-warn'
+                        : 'text-muted hover:text-status-warn'
                     }`}
                   />
                 </button>
@@ -382,11 +418,30 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           </div>
         </div>
 
+        {/* 最新 Commit 提交说明区块 */}
+        <div className="bg-background border border-status-success-border p-3.5 rounded-lg flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] uppercase text-status-success tracking-wider flex items-center gap-1.5 font-bold">
+              <GitCommit className="w-3.5 h-3.5 text-status-success" />
+              <span>最新提交说明 (Commit)</span>
+            </span>
+            <span className="text-[10px] font-mono text-muted">
+              REV:{artifact.meta.currentRevision}
+            </span>
+          </div>
+
+          <div className="text-xs font-sans text-main leading-relaxed bg-surface-subtle p-2.5 rounded border border-border whitespace-pre-wrap select-text">
+            {artifact.meta.lastCommitMessage ||
+              historyLedger[0]?.description ||
+              '初始版本 (Genesis Snapshot)'}
+          </div>
+        </div>
+
         {/* 研判备忘区块 */}
         <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-2.5">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <MessageSquareQuote className="w-3 h-3 text-sky-400" />
+              <MessageSquareQuote className="w-3 h-3 text-status-info" />
               <span>研判备忘 / 描述</span>
             </span>
 
@@ -421,7 +476,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
               <button
                 type="button"
                 onClick={() => setIsEditingDesc(true)}
-                className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
+                className="flex items-center gap-1 text-[11px] text-status-info hover:text-status-info"
               >
                 <Edit2 className="w-3 h-3" />
                 <span>{artifact.meta.description ? '编辑' : '添加备忘'}</span>
@@ -442,7 +497,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
             <button
               type="button"
               onClick={() => setIsEditingDesc(true)}
-              className="w-full text-left text-xs font-sans text-zinc-300 leading-relaxed bg-surface/60 p-2.5 rounded border border-border/80 cursor-pointer hover:border-zinc-600 transition-colors whitespace-pre-wrap select-text"
+              className="w-full text-left text-xs font-sans text-main leading-relaxed bg-surface/40 p-2.5 rounded border border-border/40 cursor-pointer hover:border-sky-500/60 hover:bg-surface/80 hover:text-main transition-all whitespace-pre-wrap select-text group"
               title="点击编辑备忘"
             >
               {artifact.meta.description}
@@ -451,18 +506,63 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
             <button
               type="button"
               onClick={() => setIsEditingDesc(true)}
-              className="w-full text-left text-[11px] font-sans text-muted italic bg-surface/30 p-2.5 rounded border border-dashed border-border cursor-pointer hover:border-zinc-600 transition-colors"
+              className="w-full text-left text-[11px] font-sans text-muted italic bg-surface/20 p-2.5 rounded border border-dashed border-border/40 cursor-pointer hover:border-sky-500/60 hover:bg-surface/40 hover:text-zinc-300 transition-all"
             >
               暂未记录研判心得，点击此处快速记录...
             </button>
           )}
         </div>
 
+        {/* 版本提交历史查看抽屉 */}
+        {historyLedger.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden bg-background">
+            <div className="p-3 flex justify-between items-center bg-surface/50 border-b border-border">
+              <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-status-warn" />
+                <span>版本提交历史 ({historyLedger.length})</span>
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setShowHistory((prev) => !prev)}
+                className="text-[11px] text-status-warn hover:text-status-warn"
+              >
+                {showHistory ? '收起历史' : '展开历史'}
+              </button>
+            </div>
+
+            {showHistory && (
+              <div className="p-2.5 flex flex-col gap-2 max-h-56 overflow-y-auto">
+                {historyLedger.map((item) => (
+                  <div
+                    key={item.revision}
+                    className="p-2 bg-surface rounded border border-border flex flex-col gap-1 text-[11px]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold font-mono text-main">REV:{item.revision}</span>
+                      <span className="text-[10px] text-muted font-mono">
+                        {new Date(item.timestamp).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-1 text-main font-sans">
+                      <GitCommit className="w-3 h-3 text-status-success shrink-0 mt-0.5" />
+                      <span className="line-clamp-2 leading-relaxed">
+                        {item.description ||
+                          (item.action === 'genesis' ? '初始版本' : '无详细说明')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 属性状态矩阵 */}
         <div className="grid grid-cols-2 gap-2 text-[11px]">
           <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
             <span className="text-muted flex items-center gap-1">
-              <Layers className="w-3 h-3 text-sky-400" />
+              <Layers className="w-3 h-3 text-status-info" />
               <span>底片修订</span>
             </span>
             <span className="font-bold text-main">REV:{artifact.meta.currentRevision}</span>
@@ -470,7 +570,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
           <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
             <span className="text-muted flex items-center gap-1">
-              <HardDrive className="w-3 h-3 text-amber-400" />
+              <HardDrive className="w-3 h-3 text-status-warn" />
               <span>源码体量</span>
             </span>
             <span className="font-bold text-main">{sourceCode.length} 字符</span>
@@ -478,7 +578,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
           <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
             <span className="text-muted flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-sky-400" />
+              <Calendar className="w-3 h-3 text-status-info" />
               <span>导入时间</span>
             </span>
             <span className="font-medium text-main truncate">
@@ -488,7 +588,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
 
           <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
             <span className="text-muted flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-emerald-400" />
+              <Calendar className="w-3 h-3 text-status-success" />
               <span>更新时间</span>
             </span>
             <span className="font-medium text-main truncate">
@@ -501,7 +601,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
         <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-3">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <TagIcon className="w-3 h-3 text-emerald-400" />
+              <TagIcon className="w-3 h-3 text-status-success" />
               <span>工件标签 ({artifact.meta.tags.length})</span>
             </span>
             <span className="text-[10px] text-muted">点击 × 移除</span>
@@ -520,7 +620,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
                   <button
                     type="button"
                     onClick={() => handleRemoveTag(rawTag)}
-                    className="text-muted hover:text-red-400 transition-colors ml-0.5"
+                    className="text-muted hover:text-status-error transition-colors ml-0.5"
                     title="移除此标签"
                   >
                     <X className="w-3 h-3" />
@@ -549,7 +649,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
             <button
               type="button"
               onClick={handleAddTag}
-              className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 px-3 py-1.5 rounded transition-colors text-xs font-semibold shrink-0"
+              className="flex items-center gap-1 bg-status-success-bg text-status-success border border-status-success-border hover:bg-emerald-500/30 px-3 py-1.5 rounded transition-colors text-xs font-semibold shrink-0"
             >
               <Plus className="w-3 h-3" />
               <span>添加</span>
@@ -557,58 +657,60 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           </div>
         </div>
 
-        {/* 源码预览抽屉 */}
-        <div className="border border-border rounded-lg overflow-hidden bg-background">
-          <div className="p-3 flex justify-between items-center bg-surface/50 border-b border-border">
-            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <Code2 className="w-3 h-3 text-sky-400" />
-              <span>HTML 源码</span>
-            </span>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCopySource}
-                className="flex items-center gap-1 text-[11px] text-muted hover:text-main px-2 py-0.5 rounded hover:bg-border"
-              >
-                {copiedCode ? (
-                  <Check className="w-3 h-3 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-                <span>{copiedCode ? '已复制' : '复制'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowCodePreview((prev) => !prev)}
-                className="text-[11px] text-sky-400 hover:text-sky-300"
-              >
-                {showCodePreview ? '收起' : '展开'}
-              </button>
+        {/* HTML 源码导出与操作栏（移除文本查看器，精炼为复制与下载） */}
+        <div className="bg-background border border-border p-3 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-status-info-bg border border-status-info-border text-status-info rounded">
+              <Code2 className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-semibold text-main">工件 HTML 源码</span>
+              <span className="text-[10px] text-muted font-mono">
+                {sourceCode ? `${sourceCode.length} 字符` : '载入中...'}
+              </span>
             </div>
           </div>
 
-          {showCodePreview && (
-            <pre className="p-3 bg-code text-zinc-300 text-[11px] max-h-56 overflow-y-auto leading-relaxed select-text font-mono">
-              {sourceCode || '正在载入源码...'}
-            </pre>
-          )}
-        </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCopySource}
+              className="flex items-center gap-1 text-[11px] text-muted hover:text-main px-2.5 py-1 rounded border border-border hover:bg-surface transition-colors"
+              title="复制完整 HTML 源码至剪贴板"
+            >
+              {copiedCode ? (
+                <Check className="w-3.5 h-3.5 text-status-success" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>{copiedCode ? '已复制' : '复制源码'}</span>
+            </button>
 
-        {/* 危险操作区 */}
-        <div className="flex justify-between items-center pt-2 mt-auto border-t border-border/80">
-          <span className="text-[11px] text-muted">销毁此工件？</span>
-          <button
-            type="button"
-            onClick={handleDeleteArtifact}
-            className="flex items-center gap-1.5 text-red-400 hover:text-red-300 border border-red-500/30 hover:bg-red-500/10 px-3 py-1.5 rounded transition-colors text-xs"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>销毁标本工件</span>
-          </button>
+            <button
+              type="button"
+              onClick={handleDownloadSource}
+              className="flex items-center gap-1 text-[11px] text-status-info hover:text-status-info px-2.5 py-1 rounded border border-status-info-border bg-status-info-bg hover:bg-status-info-bg transition-colors"
+              title="将 HTML 源文件下载至本地"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>下载文件</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* 固定的底部危险操作栏 (Footer) */}
+      <footer className="h-13 bg-background/95 border-t border-border px-4 md:px-5 flex justify-between items-center shrink-0 font-mono text-xs">
+        <span className="text-[11px] text-muted">销毁此工件？</span>
+        <button
+          type="button"
+          onClick={handleDeleteArtifact}
+          className="flex items-center gap-1.5 text-status-error hover:text-status-error border border-status-error-border hover:bg-status-error-bg px-3 py-1.5 rounded transition-colors text-xs"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>销毁标本工件</span>
+        </button>
+      </footer>
     </aside>
   );
 };

@@ -200,7 +200,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
           <div
             ref={refs.setFloating}
             style={floatingStyles}
-            className="z-50 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-lg shadow-2xl p-1 text-xs font-mono text-zinc-200 overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
+            className="z-50 bg-surface/98 backdrop-blur-md border border-border rounded-lg shadow-2xl p-1 text-xs font-mono text-main overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
             {...getFloatingProps({
               onMouseDown: (e) => {
                 // 防止点击面板滚动条或内边距区域时输入框失焦
@@ -208,7 +208,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
               },
             })}
           >
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800 flex justify-between items-center mb-0.5">
+            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted border-b border-border flex justify-between items-center mb-0.5">
               <span>标签建议 (↑↓ 移动 · 回车上屏)</span>
               <span>{suggestions.length} 项</span>
             </div>
@@ -226,8 +226,8 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
                     tabIndex={-1}
                     className={`flex items-center justify-between w-full px-2.5 py-1.5 rounded text-left transition-colors cursor-pointer outline-none ${
                       isActive
-                        ? 'bg-sky-500/20 text-sky-200 border border-sky-500/40'
-                        : 'hover:bg-zinc-800/80 text-zinc-300 border border-transparent'
+                        ? 'bg-status-info-bg text-status-info border border-status-info-border'
+                        : 'hover:bg-surface-subtle text-main border border-transparent'
                     }`}
                     {...getItemProps({
                       onClick: (e) => {
@@ -243,29 +243,27 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {item.type === 'namespace' ? (
-                        <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <Folder className="w-3.5 h-3.5 text-status-warn shrink-0" />
                       ) : item.type === 'value' ? (
-                        <Hash className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <Hash className="w-3.5 h-3.5 text-status-info shrink-0" />
                       ) : (
-                        <TagIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <TagIcon className="w-3.5 h-3.5 text-status-success shrink-0" />
                       )}
 
                       <span className="truncate font-medium">{item.displayText}</span>
 
                       {item.subText && (
-                        <span className="text-[10px] text-zinc-500 truncate">({item.subText})</span>
+                        <span className="text-[10px] text-muted truncate">({item.subText})</span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-zinc-500">
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-muted">
                       {item.count !== undefined && item.count > 0 && (
-                        <span className="bg-zinc-800 px-1.5 py-0.2 rounded text-[10px] text-zinc-400 border border-zinc-700/60">
+                        <span className="bg-tag px-1.5 py-0.2 rounded text-[10px] text-muted border border-border">
                           {item.count}
                         </span>
                       )}
-                      {item.type === 'namespace' && (
-                        <ChevronRight className="w-3 h-3 text-zinc-500" />
-                      )}
+                      {item.type === 'namespace' && <ChevronRight className="w-3 h-3 text-muted" />}
                     </div>
                   </button>
                 );

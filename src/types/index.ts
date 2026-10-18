@@ -3,7 +3,8 @@ export type PatchAction =
   | 'write_file'
   | 'add_tag'
   | 'remove_tag'
-  | 'set_description';
+  | 'set_description'
+  | 'commit';
 
 export interface PatchCommand {
   action: PatchAction;
@@ -11,6 +12,7 @@ export interface PatchCommand {
   newDoc: string;
   tags?: string[];
   description?: string;
+  commitMessage?: string;
 }
 
 export interface Tag {
@@ -43,6 +45,7 @@ export interface ArtifactMeta {
   updatedAt: string;
   rating?: number;
   description?: string;
+  lastCommitMessage?: string;
 }
 
 export interface Artifact {

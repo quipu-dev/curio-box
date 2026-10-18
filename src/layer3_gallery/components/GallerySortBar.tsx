@@ -47,17 +47,19 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
           onClick={onToggleNeedsPoster}
           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors border ${
             filterNeedsPoster
-              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-medium'
+              ? 'bg-status-warn-bg border-status-warn-border text-status-warn font-medium'
               : 'bg-surface border-border text-muted hover:text-main hover:border-zinc-600'
           }`}
           title={filterNeedsPoster ? '显示全部工件' : '仅显示未截取封面的待定格工件'}
         >
-          <Camera className="w-3 h-3 text-amber-400" />
+          <Camera className="w-3 h-3 text-status-warn" />
           <span>待定格</span>
           {needsPosterCount > 0 && (
             <span
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono leading-none ${
-                filterNeedsPoster ? 'bg-amber-500/30 text-amber-200' : 'bg-zinc-800 text-zinc-400'
+                filterNeedsPoster
+                  ? 'bg-status-warn-bg text-status-warn'
+                  : 'bg-zinc-800 text-zinc-400'
               }`}
             >
               {needsPosterCount}
@@ -71,12 +73,12 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
           onClick={onToggleUnclassified}
           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors border ${
             filterUnclassified
-              ? 'bg-sky-500/20 border-sky-500/50 text-sky-300 font-medium'
+              ? 'bg-status-info-bg border-status-info-border text-status-info font-medium'
               : 'bg-surface border-border text-muted hover:text-main hover:border-zinc-600'
           }`}
           title={filterUnclassified ? '显示全部工件' : '仅显示待分类或未打标签的工件'}
         >
-          <Tag className="w-3 h-3 text-sky-400" />
+          <Tag className="w-3 h-3 text-status-info" />
           <span>未分类</span>
           {unclassifiedCount > 0 && (
             <span
@@ -98,7 +100,7 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
 
       <div className="flex items-center gap-2">
         <span className="flex items-center gap-1 text-[11px] text-muted">
-          <ArrowDownUp className="w-3 h-3 text-sky-400" />
+          <ArrowDownUp className="w-3 h-3 text-status-info" />
           <span>排序：</span>
         </span>
 
@@ -108,7 +110,7 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
             onClick={() => onSortChange('date-desc')}
             className={`px-2 py-1 text-xs rounded transition-colors ${
               sortBy === 'date-desc'
-                ? 'bg-zinc-800 text-white font-medium'
+                ? 'bg-accent text-accent-text font-medium'
                 : 'text-muted hover:text-main'
             }`}
             title="按导入时间降序（最新导入优先）"
@@ -121,7 +123,7 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
             onClick={() => onSortChange('date-asc')}
             className={`px-2 py-1 text-xs rounded transition-colors ${
               sortBy === 'date-asc'
-                ? 'bg-zinc-800 text-white font-medium'
+                ? 'bg-accent text-accent-text font-medium'
                 : 'text-muted hover:text-main'
             }`}
             title="按导入时间升序（最早导入优先）"
@@ -134,7 +136,7 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
             onClick={() => onSortChange('updated-desc')}
             className={`px-2 py-1 text-xs rounded transition-colors ${
               sortBy === 'updated-desc'
-                ? 'bg-zinc-800 text-white font-medium'
+                ? 'bg-accent text-accent-text font-medium'
                 : 'text-muted hover:text-main'
             }`}
             title="按最后修改时间降序（最近活跃优先）"
@@ -147,12 +149,12 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
             onClick={() => onSortChange('rating-desc')}
             className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
               sortBy === 'rating-desc'
-                ? 'bg-zinc-800 text-amber-300 font-medium'
+                ? 'bg-zinc-800 text-status-warn font-medium'
                 : 'text-muted hover:text-main'
             }`}
             title="按评星降序（高分优先）"
           >
-            <Star className="w-3 h-3 fill-current text-amber-400" />
+            <Star className="w-3 h-3 fill-current text-status-warn" />
             <span>评分最高</span>
           </button>
 
@@ -161,7 +163,7 @@ export const GallerySortBar: React.FC<GallerySortBarProps> = ({
             onClick={() => onSortChange('name-asc')}
             className={`px-2 py-1 text-xs rounded transition-colors ${
               sortBy === 'name-asc'
-                ? 'bg-zinc-800 text-white font-medium'
+                ? 'bg-accent text-accent-text font-medium'
                 : 'text-muted hover:text-main'
             }`}
             title="按名称拼音与字母排序"

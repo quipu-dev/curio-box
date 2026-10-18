@@ -158,12 +158,21 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
 【当前工件已有标签】
 ${currentTagsText}
 
-【当前工件研判备忘】
+【当前工件全局研判备忘】
 ${currentDescText}
 
 【指令系统支持的操作规范】
 
-1. 差量局部修改 (patch_file) - 适用于局部调整、修复 Bug 或修改参数：
+1. 本次修改说明 (commit)（强烈推荐）：
+记录本次提交的具体改进点、Bug 修复或参数调整。此内容将保存在该版本的快照时间线中，严禁放入 set_description 污染全局备忘：
+\`\`\`act
+commit
+\`\`\`
+\`\`\`
+已取消鼠标交互响应，实现自主有机平滑漫游；精简纯粹界面；消除周期性脉冲突变。
+\`\`\`
+
+2. 差量局部修改 (patch_file) - 适用于局部调整、修复 Bug 或修改参数：
 \`\`\`act
 patch_file
 \`\`\`
@@ -174,7 +183,7 @@ patch_file
 <替换后的新代码行>
 \`\`\`
 
-2. 全量源码覆写 (write_file) - 适用于大幅重构、替换主逻辑或换用架构：
+3. 全量源码覆写 (write_file) - 适用于大幅重构、替换主逻辑或换用架构：
 \`\`\`act
 write_file
 \`\`\`
@@ -185,20 +194,20 @@ write_file
 </html>
 \`\`\`
 
-3. 记录研判备忘 (set_description)（可选）：
-\`\`\`act
-set_description
-\`\`\`
-\`\`\`
-动画视觉呈现极佳，已优化流体阻尼系数。
-\`\`\`
-
 4. 追加或移除标签 (add_tag / remove_tag)（可选）：
 \`\`\`act
 add_tag
 \`\`\`
 \`\`\`
 领域:图形学 物理:粒子系统
+\`\`\`
+
+5. 工件全局研判备忘 (set_description)（慎用，仅限修改整个工件的定性归档备忘，不要写单次修改细节）：
+\`\`\`act
+set_description
+\`\`\`
+\`\`\`
+优秀的高性能流体动画标本，适合大屏沉浸展演。
 \`\`\`
 
 当前工件【${artifact.meta.name}】(REV:${artifact.meta.currentRevision}) 源码：
@@ -271,6 +280,10 @@ ${loadedSourceCode}
           ? artifact.meta.currentRevision + 1
           : artifact.meta.currentRevision;
 
+        const commitDescription =
+          pendingSimulation.nextCommitMessage ||
+          (hasCodeChange ? '应用审核通过的补丁' : '更新工件元数据');
+
         if (hasCodeChange) {
           await galleryStorage.saveArtifactSource(
             artifact.meta.filename,
@@ -278,7 +291,20 @@ ${loadedSourceCode}
             nextCode,
             nextRev,
             'patch',
-            '应用审核通过的补丁',
+            commitDescription,
+          );
+        } else if (
+          pendingSimulation.hasTagChange ||
+          pendingSimulation.hasDescChange ||
+          pendingSimulation.hasCommitChange
+        ) {
+          // 代码未变但单独提交了 commit 日志或元数据时，记录一次修订台账记录
+          await galleryStorage.recordNegativeRevision(
+            artifact.meta.id,
+            nextRev,
+            baseCode,
+            'patch',
+            commitDescription,
           );
         }
 
@@ -286,6 +312,7 @@ ${loadedSourceCode}
           ...artifact.meta,
           tags: nextTags,
           description: nextDesc,
+          lastCommitMessage: commitDescription,
           currentRevision: nextRev,
           updatedAt: new Date().toISOString(),
         };
@@ -304,6 +331,7 @@ ${loadedSourceCode}
 
         const summary = [];
         if (hasCodeChange) summary.push(`代码升级至 REV:${nextRev}`);
+        if (pendingSimulation.hasCommitChange) summary.push('提交日志已记录');
         if (pendingSimulation.hasTagChange) summary.push('标签已更新');
         if (pendingSimulation.hasDescChange) summary.push('研判备忘已写入');
 
@@ -378,7 +406,7 @@ ${loadedSourceCode}
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-background text-main flex flex-col overflow-hidden select-none">
+    <div className="dark-scope fixed inset-0 z-40 bg-background text-main flex flex-col overflow-hidden select-none">
       <DarkroomStudioHeader
         artifact={artifact}
         viewingRevision={viewingSnapshot?.revision ?? null}
@@ -426,7 +454,7 @@ ${loadedSourceCode}
                     : 'text-muted hover:text-main'
                 }`}
               >
-                <Code2 className="w-3.5 h-3.5 text-sky-400" />
+                <Code2 className="w-3.5 h-3.5 text-status-info" />
                 <span>暗房指令台</span>
               </button>
               <button
@@ -438,7 +466,7 @@ ${loadedSourceCode}
                     : 'text-muted hover:text-main'
                 }`}
               >
-                <History className="w-3.5 h-3.5 text-amber-400" />
+                <History className="w-3.5 h-3.5 text-status-warn" />
                 <span>版本历史</span>
               </button>
               <button
@@ -450,7 +478,7 @@ ${loadedSourceCode}
                     : 'text-muted hover:text-main'
                 }`}
               >
-                <Database className="w-3.5 h-3.5 text-emerald-400" />
+                <Database className="w-3.5 h-3.5 text-status-success" />
                 <span>标签与资源</span>
               </button>
             </div>

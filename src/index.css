@@ -2,34 +2,169 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Design Tokens: 浅色模式 (Light - 默认基准)
+   ========================================================================== */
 :root {
-  --bg-color: #f4f4f5;
+  color-scheme: light;
+
+  /* 基础表面与画布 */
+  --bg-color: #f8fafc;
   --surface-color: #ffffff;
-  --text-main: #18181b;
-  --text-muted: #71717a;
-  --border-color: #e4e4e7;
-  --accent-color: #000000;
+  --surface-elevated: #ffffff;
+  --surface-subtle: #f1f5f9;
+  --surface-overlay: rgba(15, 23, 42, 0.6);
+
+  /* 基础文本 */
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+
+  /* 边框体系 */
+  --border-color: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #94a3b8;
+
+  /* 品牌与基调色 */
+  --accent-color: #0f172a;
   --accent-text: #ffffff;
-  --tag-bg: #f4f4f5;
-  --code-bg: #18181b;
-  --code-text: #a1a1aa;
+  --tag-bg: #e2e8f0;
+
+  /* 代码高亮表面 (浅色模式下的柔和编辑器底色) */
+  --code-bg: #0f172a;
+  --code-text: #e2e8f0;
+
+  /* 功能状态色四元组 (针对白底高对比度调优，符合 WCAG AA 4.5:1) */
+  --status-success-bg: #ecfdf5;
+  --status-success-text: #047857;
+  --status-success-border: #a7f3d0;
+
+  --status-warn-bg: #fffbeb;
+  --status-warn-text: #b45309;
+  --status-warn-border: #fde68a;
+
+  --status-error-bg: #fef2f2;
+  --status-error-text: #b91c1c;
+  --status-error-border: #fecaca;
+
+  --status-info-bg: #f0f9ff;
+  --status-info-text: #0284c7;
+  --status-info-border: #bae6fd;
 }
 
+/* ==========================================================================
+   Design Tokens: 暗色模式 (Dark)
+   ========================================================================== */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --bg-color: #09090b;
   --surface-color: #18181b;
+  --surface-elevated: #27272a;
+  --surface-subtle: #121215;
+  --surface-overlay: rgba(0, 0, 0, 0.85);
+
   --text-main: #fafafa;
   --text-muted: #a1a1aa;
+  --text-inverse: #09090b;
+
   --border-color: #27272a;
+  --border-subtle: #1f1f23;
+  --border-strong: #3f3f46;
+
   --accent-color: #ffffff;
-  --accent-text: #000000;
+  --accent-text: #09090b;
   --tag-bg: #27272a;
+
   --code-bg: #000000;
   --code-text: #d4d4d8;
+
+  --status-success-bg: rgba(6, 78, 59, 0.25);
+  --status-success-text: #34d399;
+  --status-success-border: rgba(52, 211, 153, 0.35);
+
+  --status-warn-bg: rgba(120, 53, 15, 0.25);
+  --status-warn-text: #fbbf24;
+  --status-warn-border: rgba(251, 191, 36, 0.35);
+
+  --status-error-bg: rgba(127, 29, 29, 0.25);
+  --status-error-text: #f87171;
+  --status-error-border: rgba(248, 113, 113, 0.35);
+
+  --status-info-bg: rgba(12, 74, 110, 0.25);
+  --status-info-text: #38bdf8;
+  --status-info-border: rgba(56, 189, 248, 0.35);
+}
+
+/* ==========================================================================
+   特定暗区作用域 (用于工件画布、舞台及暗房，强制保持暗色环境)
+   ========================================================================== */
+.dark-scope,
+[data-theme-scope="dark"] {
+  --bg-color: #000000;
+  --surface-color: #18181b;
+  --surface-elevated: #27272a;
+  --surface-subtle: #101012;
+  --surface-overlay: rgba(0, 0, 0, 0.85);
+
+  --text-main: #fafafa;
+  --text-muted: #a1a1aa;
+  --text-inverse: #09090b;
+
+  --border-color: #27272a;
+  --border-subtle: #1f1f23;
+  --border-strong: #3f3f46;
+
+  --accent-color: #ffffff;
+  --accent-text: #09090b;
+  --tag-bg: #27272a;
+
+  --code-bg: #000000;
+  --code-text: #d4d4d8;
+
+  /* 暗色作用域专有状态色（彻底阻断全局浅色穿透） */
+  --status-success-bg: rgba(6, 78, 59, 0.25);
+  --status-success-text: #34d399;
+  --status-success-border: rgba(52, 211, 153, 0.35);
+
+  --status-warn-bg: rgba(120, 53, 15, 0.25);
+  --status-warn-text: #fbbf24;
+  --status-warn-border: rgba(251, 191, 36, 0.35);
+
+  --status-error-bg: rgba(127, 29, 29, 0.25);
+  --status-error-text: #f87171;
+  --status-error-border: rgba(248, 113, 113, 0.35);
+
+  --status-info-bg: rgba(12, 74, 110, 0.25);
+  --status-info-text: #38bdf8;
+  --status-info-border: rgba(56, 189, 248, 0.35);
+
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* WebKit 自适应极简滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 body {
@@ -38,5 +173,5 @@ body {
   color: var(--text-main);
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
-  transition: background-color 0.2s, color 0.2s;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }

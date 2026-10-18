@@ -1,6 +1,6 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import type { Artifact } from '@/types';
-import { Code2, FileText, MessageSquareQuote, Play, Star } from 'lucide-react';
+import { Code2, FileText, GitCommit, MessageSquareQuote, Play, Star } from 'lucide-react';
 import type React from 'react';
 
 interface ArtifactCardProps {
@@ -38,7 +38,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       >
         <div className="absolute top-2 right-2 flex items-center gap-1 z-[2]">
           {artifact.meta.rating && artifact.meta.rating > 0 ? (
-            <div className="bg-surface/90 backdrop-blur border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-mono text-amber-400 rounded flex items-center gap-0.5">
+            <div className="bg-surface/90 backdrop-blur border border-status-warn-border px-1.5 py-0.5 text-[10px] font-mono text-status-warn rounded flex items-center gap-0.5">
               <Star className="w-2.5 h-2.5 fill-current" />
               <span>{artifact.meta.rating}</span>
             </div>
@@ -63,7 +63,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           </div>
         )}
 
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+        <div className="absolute inset-0 bg-surface-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <span className="flex items-center gap-1 bg-surface text-main text-xs px-2.5 py-1 rounded font-mono shadow-md">
             <Play className="w-3 h-3 fill-current" />
             <span>放映舞台</span>
@@ -84,10 +84,18 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           >
             {artifact.meta.name}
           </span>
+          {artifact.meta.lastCommitMessage && (
+            <span
+              title={`最新提交: ${artifact.meta.lastCommitMessage}`}
+              className="shrink-0 flex items-center text-status-success"
+            >
+              <GitCommit className="w-3 h-3" />
+            </span>
+          )}
           {artifact.meta.description && (
             <span
-              title={artifact.meta.description}
-              className="shrink-0 flex items-center text-sky-400"
+              title={`研判备忘: ${artifact.meta.description}`}
+              className="shrink-0 flex items-center text-status-info"
             >
               <MessageSquareQuote className="w-3 h-3" />
             </span>
@@ -128,7 +136,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenStudio(artifact)}
-                  className="flex items-center gap-1 text-[11px] font-mono text-sky-400 hover:text-sky-300 border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
+                  className="flex items-center gap-1 text-[11px] font-mono text-status-info hover:text-status-info border border-sky-400/30 px-1.5 py-0.5 rounded hover:bg-sky-400/10 transition-colors"
                   title="打开独立暗房工作台"
                 >
                   <Code2 className="w-3 h-3" />
@@ -136,6 +144,19 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* 最新 Commit 提交内容直接展示 */}
+            {artifact.meta.lastCommitMessage && (
+              <div
+                className="flex items-start gap-1.5 bg-background/80 border border-status-success-border px-2 py-1 rounded text-[11px] font-sans text-zinc-300"
+                title={`最新提交说明: ${artifact.meta.lastCommitMessage}`}
+              >
+                <GitCommit className="w-3.5 h-3.5 text-status-success shrink-0 mt-0.5" />
+                <span className="line-clamp-2 leading-relaxed">
+                  {artifact.meta.lastCommitMessage}
+                </span>
+              </div>
+            )}
 
             {artifact.meta.description && (
               <p

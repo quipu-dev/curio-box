@@ -206,7 +206,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
           : 'w-full h-full';
 
   return (
-    <div className="relative w-full h-full bg-black/95 overflow-hidden rounded border border-border flex items-center justify-center">
+    <div className="dark-scope relative w-full h-full bg-black/95 overflow-hidden rounded border border-border flex items-center justify-center">
       {isActivated ? (
         <div className={`relative flex items-center justify-center ${aspectClass}`}>
           <iframe
@@ -220,7 +220,7 @@ export const SandboxViewport: React.FC<SandboxViewportProps> = ({
           {isLoading && (
             <div className="absolute inset-0 bg-zinc-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-20 pointer-events-none select-none">
               <div className="relative flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-status-info animate-spin" />
                 <Sparkles className="w-4 h-4 text-sky-200 absolute animate-pulse" />
               </div>
               <div className="flex flex-col items-center gap-1">

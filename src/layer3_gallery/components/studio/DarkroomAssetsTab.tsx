@@ -49,7 +49,7 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
       <div className="bg-background border border-border p-3 rounded flex flex-col gap-2">
         <div className="flex justify-between items-center">
           <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-            <MessageSquareQuote className="w-3 h-3 text-sky-400" />
+            <MessageSquareQuote className="w-3 h-3 text-status-info" />
             <span>工件研判备忘</span>
           </span>
 
@@ -87,7 +87,7 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
                 setDescValue(description || '');
                 setIsEditing(true);
               }}
-              className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
+              className="flex items-center gap-1 text-[11px] text-status-info hover:text-status-info"
             >
               <Edit2 className="w-3 h-3" />
               <span>{description ? '编辑' : '添加'}</span>
@@ -135,7 +135,7 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
             外部资源与本地缓存
           </span>
           {assetStats && (
-            <span className="text-[11px] font-semibold text-sky-400">
+            <span className="text-[11px] font-semibold text-status-info">
               {assetStats.cached}/{assetStats.total} 已缓存
             </span>
           )}
@@ -152,12 +152,12 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
                   {asset.url.split('/').pop()}
                 </span>
                 {asset.status === 'cached' ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-400 shrink-0">
+                  <span className="inline-flex items-center gap-1 text-status-success shrink-0">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>已离线</span>
                   </span>
                 ) : (
-                  <span className="text-amber-400 shrink-0">未缓存</span>
+                  <span className="text-status-warn shrink-0">未缓存</span>
                 )}
               </div>
             ))}
@@ -170,7 +170,7 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
           <button
             type="button"
             onClick={onCacheAllAssets}
-            className="w-full mt-2 bg-sky-500/20 border border-sky-500/40 text-sky-300 py-1.5 rounded text-xs hover:bg-sky-500/30 transition-colors flex items-center justify-center gap-1.5"
+            className="w-full mt-2 bg-status-info-bg border border-status-info-border text-status-info py-1.5 rounded text-xs hover:bg-sky-500/30 transition-colors flex items-center justify-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>一键缓存全部外部资源</span>

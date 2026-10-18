@@ -25,14 +25,23 @@ function MainApp() {
   const { resolvedTheme, toggleTheme } = useTheme();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [inspectingFilename, setInspectingFilename] = useState<string | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
 
-  // Hash 路由挂载与同步
-  const { stageFilename, studioFilename, navigateToStage, navigateToStudio, navigateToGallery } =
-    useHashRoute();
+  // Hash 统一视图状态机路由（单一真实数据源）
+  const {
+    stageFilename,
+    studioFilename,
+    inspectFilename,
+    navigateToStage,
+    navigateToStudio,
+    navigateToInspect,
+    navigateToGallery,
+  } = useHashRoute();
+
+  // 档案抽屉检视状态直接由路由单向派生，杜绝状态滞留
+  const inspectingFilename = inspectFilename;
 
   // 排序、过滤与聚合分组 Hooks
   const {
@@ -186,15 +195,15 @@ function MainApp() {
 
   const handlePrevInspector = useCallback(() => {
     if (hasPrevInspector) {
-      setInspectingFilename(sortedArtifacts[inspectingIndex - 1].meta.filename);
+      navigateToInspect(sortedArtifacts[inspectingIndex - 1].meta.filename);
     }
-  }, [hasPrevInspector, sortedArtifacts, inspectingIndex]);
+  }, [hasPrevInspector, sortedArtifacts, inspectingIndex, navigateToInspect]);
 
   const handleNextInspector = useCallback(() => {
     if (hasNextInspector) {
-      setInspectingFilename(sortedArtifacts[inspectingIndex + 1].meta.filename);
+      navigateToInspect(sortedArtifacts[inspectingIndex + 1].meta.filename);
     }
-  }, [hasNextInspector, sortedArtifacts, inspectingIndex]);
+  }, [hasNextInspector, sortedArtifacts, inspectingIndex, navigateToInspect]);
 
   // 视口自动跟焦：当选中的工件变化时，瞬时将其精准锁定在可视安全区域（零延迟跟手）
   useEffect(() => {
@@ -226,7 +235,7 @@ function MainApp() {
 
       if (e.key === 'Escape') {
         if (!isInputFocused) {
-          setInspectingFilename(null);
+          navigateToGallery();
         }
         return;
       }
@@ -316,7 +325,7 @@ function MainApp() {
       }
 
       if (bestCandidate) {
-        setInspectingFilename(bestCandidate.filename);
+        navigateToInspect(bestCandidate.filename);
       } else {
         // 若同行已到边缘，横向移动回退为自然线性切页
         if (e.key === 'ArrowRight') handleNextInspector();
@@ -328,7 +337,13 @@ function MainApp() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [inspectingFilename, handlePrevInspector, handleNextInspector]);
+  }, [
+    inspectingFilename,
+    handlePrevInspector,
+    handleNextInspector,
+    navigateToInspect,
+    navigateToGallery,
+  ]);
 
   // 进入暗房或档案检视器时按需异步读取源码
   useEffect(() => {
@@ -480,23 +495,24 @@ function MainApp() {
       prev.map((item) => (item.meta.filename === oldFilename ? newArt : item)),
     );
     if (inspectingFilename === oldFilename) {
-      setInspectingFilename(newFilename);
+      navigateToInspect(newFilename);
     }
     if (stageFilename === oldFilename) {
-      window.location.hash = `#/stage/${encodeURIComponent(newFilename)}`;
+      navigateToStage(newFilename);
     }
     if (studioFilename === oldFilename) {
-      window.location.hash = `#/studio/${encodeURIComponent(newFilename)}`;
+      navigateToStudio(newFilename);
     }
   };
 
   const handleDeleteArtifact = async (filename: string) => {
     await galleryStorage.deleteArtifact(filename);
     setArtifacts((prev) => prev.filter((item) => item.meta.filename !== filename));
-    if (inspectingFilename === filename) {
-      setInspectingFilename(null);
-    }
-    if (stageFilename === filename || studioFilename === filename) {
+    if (
+      inspectingFilename === filename ||
+      stageFilename === filename ||
+      studioFilename === filename
+    ) {
       navigateToGallery();
     }
   };
@@ -570,9 +586,9 @@ function MainApp() {
                         onOpenStage={(art) => navigateToStage(art.meta.filename)}
                         onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
                         onOpenInspector={(art) =>
-                          setInspectingFilename((prev) =>
-                            prev === art.meta.filename ? null : art.meta.filename,
-                          )
+                          inspectingFilename === art.meta.filename
+                            ? navigateToGallery()
+                            : navigateToInspect(art.meta.filename)
                         }
                       />
                     ))}
@@ -614,6 +630,7 @@ function MainApp() {
           onBackToGallery={navigateToGallery}
           onOpenStage={(art) => navigateToStage(art.meta.filename)}
           onUpdateArtifact={handleUpdateArtifact}
+          onUpdateRating={handleUpdateRating}
         />
       )}
 
@@ -621,15 +638,9 @@ function MainApp() {
       {inspectingArtifact && (
         <ArtifactInspectorDrawer
           artifact={inspectingArtifact}
-          onClose={() => setInspectingFilename(null)}
-          onOpenStage={(art) => {
-            setInspectingFilename(null);
-            navigateToStage(art.meta.filename);
-          }}
-          onOpenStudio={(art) => {
-            setInspectingFilename(null);
-            navigateToStudio(art.meta.filename);
-          }}
+          onClose={navigateToGallery}
+          onOpenStage={(art) => navigateToStage(art.meta.filename)}
+          onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
           onUpdateTags={handleUpdateTags}
           onUpdateRating={handleUpdateRating}
           onUpdateDescription={handleUpdateDescription}

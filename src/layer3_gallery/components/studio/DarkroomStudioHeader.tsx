@@ -11,6 +11,7 @@ import {
   PanelRightOpen,
   Play,
   Square,
+  Star,
 } from 'lucide-react';
 import type React from 'react';
 
@@ -27,6 +28,7 @@ interface DarkroomStudioHeaderProps {
   onCapturePoster: () => void;
   onOpenStage: () => void;
   onToggleConsole: () => void;
+  onUpdateRating?: (rating: number) => void;
 }
 
 export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
@@ -42,6 +44,7 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
   onCapturePoster,
   onOpenStage,
   onToggleConsole,
+  onUpdateRating,
 }) => {
   return (
     <header className="h-13 bg-surface border-b border-border px-4 flex justify-between items-center gap-4 text-xs font-mono shrink-0">
@@ -84,6 +87,27 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
               <span className="truncate">{artifact.meta.lastCommitMessage}</span>
             </span>
           )}
+
+          {/* 暗房内直接鉴赏星级交互 */}
+          <div className="hidden sm:flex items-center gap-0.5 ml-1 bg-background px-1.5 py-0.5 rounded border border-border">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => onUpdateRating?.(artifact.meta.rating === star ? 0 : star)}
+                className="p-0.5 hover:scale-110 transition-transform outline-none"
+                title={`${star} 星`}
+              >
+                <Star
+                  className={`w-3.5 h-3.5 transition-colors ${
+                    star <= (artifact.meta.rating || 0)
+                      ? 'fill-amber-400 text-status-warn'
+                      : 'text-muted/40 hover:text-status-warn'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -19,6 +19,7 @@ interface DarkroomStudioProps {
   onBackToGallery: () => void;
   onOpenStage: (artifact: Artifact) => void;
   onUpdateArtifact: (updated: Artifact) => void;
+  onUpdateRating?: (filename: string, rating: number) => Promise<void> | void;
 }
 
 type TabType = 'patch' | 'history' | 'assets';
@@ -33,6 +34,7 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   onBackToGallery,
   onOpenStage,
   onUpdateArtifact,
+  onUpdateRating,
 }) => {
   if (!artifact) return null;
 
@@ -420,6 +422,7 @@ ${loadedSourceCode}
         onCapturePoster={handleCapturePoster}
         onOpenStage={() => onOpenStage(artifact)}
         onToggleConsole={() => setIsConsoleOpen(!isConsoleOpen)}
+        onUpdateRating={(rating) => onUpdateRating?.(artifact.meta.filename, rating)}
       />
 
       <div className="flex-1 flex overflow-hidden">

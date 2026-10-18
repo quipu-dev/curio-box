@@ -77,7 +77,6 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [isSavingDesc, setIsSavingDesc] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
   const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
-  const [showHistory, setShowHistory] = useState<boolean>(false);
 
   // 当切换工件时重置状态
   useEffect(() => {
@@ -87,7 +86,6 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     setEditDesc(artifact.meta.description || '');
     setIsEditingDesc(false);
     setIsSavingDesc(false);
-    setShowHistory(false);
   }, [artifact.meta.name, artifact.meta.description]);
 
   // 加载该工件的历史提交台账
@@ -259,7 +257,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   return (
     <aside
       aria-label="工件档案信息栏"
-      className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-40 bg-surface/98 backdrop-blur-xl border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-250 select-none"
+      className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-30 bg-surface/98 backdrop-blur-xl border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-250 select-none"
     >
       {/* 顶部标题栏 */}
       <header className="h-14 bg-background/90 border-b border-border px-4 flex justify-between items-center gap-3 shrink-0 font-mono text-xs">
@@ -513,50 +511,32 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           )}
         </div>
 
-        {/* 版本提交历史查看抽屉 */}
-        {historyLedger.length > 0 && (
-          <div className="border border-border rounded-lg overflow-hidden bg-background">
-            <div className="p-3 flex justify-between items-center bg-surface/50 border-b border-border">
-              <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-status-warn" />
-                <span>版本提交历史 ({historyLedger.length})</span>
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setShowHistory((prev) => !prev)}
-                className="text-[11px] text-status-warn hover:text-status-warn"
-              >
-                {showHistory ? '收起历史' : '展开历史'}
-              </button>
-            </div>
-
-            {showHistory && (
-              <div className="p-2.5 flex flex-col gap-2 max-h-56 overflow-y-auto">
-                {historyLedger.map((item) => (
-                  <div
-                    key={item.revision}
-                    className="p-2 bg-surface rounded border border-border flex flex-col gap-1 text-[11px]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold font-mono text-main">REV:{item.revision}</span>
-                      <span className="text-[10px] text-muted font-mono">
-                        {new Date(item.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-1 text-main font-sans">
-                      <GitCommit className="w-3 h-3 text-status-success shrink-0 mt-0.5" />
-                      <span className="line-clamp-2 leading-relaxed">
-                        {item.description ||
-                          (item.action === 'genesis' ? '初始版本' : '无详细说明')}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* 底片修订概况与深度工件台入口 */}
+        <div className="border border-border rounded-lg p-3 bg-background flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-status-warn" />
+              <span>底片快照链台账</span>
+            </span>
+            <span className="text-[10px] font-mono text-muted">
+              共 {historyLedger.length} 个修订版本
+            </span>
           </div>
-        )}
+
+          <div className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+            如需进行行级 Diff
+            审查、提示词协同注入、历史版本检视（Checkout）或分支回滚，请进入镜像暗房。
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onOpenStudio(artifact)}
+            className="w-full mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-surface hover:bg-border border border-border text-status-info text-xs rounded transition-colors"
+          >
+            <Code2 className="w-3.5 h-3.5" />
+            <span>进入镜像暗房工作台 (Darkroom Studio)</span>
+          </button>
+        </div>
 
         {/* 属性状态矩阵 */}
         <div className="grid grid-cols-2 gap-2 text-[11px]">

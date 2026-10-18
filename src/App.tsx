@@ -669,7 +669,7 @@ function MainApp() {
 
       {/* 全局拖拽释放 HUD 视觉蒙层 */}
       {isDragOver && (
-        <div className="fixed inset-0 z-50 bg-sky-950/80 backdrop-blur-md border-4 border-dashed border-sky-400 flex flex-col items-center justify-center gap-3 text-sky-200 pointer-events-none select-none animate-in fade-in">
+        <div className="fixed inset-0 z-50 bg-sky-950/90 border-4 border-dashed border-sky-400 flex flex-col items-center justify-center gap-3 text-sky-200 pointer-events-none select-none animate-in fade-in">
           <UploadCloud className="w-16 h-16 text-sky-400 animate-bounce" />
           <div className="text-xl font-bold font-mono">释放以导入新工件</div>
           <div className="text-xs font-mono text-sky-300/80">

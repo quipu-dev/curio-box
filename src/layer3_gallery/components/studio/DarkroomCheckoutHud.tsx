@@ -13,7 +13,7 @@ export const DarkroomCheckoutHud: React.FC<DarkroomCheckoutHudProps> = ({
   onExit,
 }) => {
   return (
-    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-zinc-950/90 border border-status-warn-border backdrop-blur-md px-4 py-2 rounded-full text-xs font-mono text-zinc-200 shadow-2xl animate-in fade-in slide-in-from-top-2">
+    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-zinc-950 border border-status-warn-border px-4 py-2 rounded-full text-xs font-mono text-zinc-200 shadow-2xl animate-in fade-in slide-in-from-top-2">
       <span className="inline-flex items-center gap-1.5 text-status-warn font-semibold">
         <Eye className="w-3.5 h-3.5 animate-pulse" />
         <span>历史检视中 · REV:{revision}</span>

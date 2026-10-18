@@ -257,7 +257,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   return (
     <aside
       aria-label="工件档案信息栏"
-      className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-30 bg-surface/98 backdrop-blur-xl border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-250 select-none"
+      className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-30 bg-surface border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-250 select-none"
     >
       {/* 顶部标题栏 */}
       <header className="h-14 bg-background/90 border-b border-border px-4 flex justify-between items-center gap-3 shrink-0 font-mono text-xs">

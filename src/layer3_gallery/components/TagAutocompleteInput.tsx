@@ -200,7 +200,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
           <div
             ref={refs.setFloating}
             style={floatingStyles}
-            className="z-50 bg-surface/98 backdrop-blur-md border border-border rounded-lg shadow-2xl p-1 text-xs font-mono text-main overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
+            className="z-50 bg-surface border border-border rounded-lg shadow-2xl p-1 text-xs font-mono text-main overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
             {...getFloatingProps({
               onMouseDown: (e) => {
                 // 防止点击面板滚动条或内边距区域时输入框失焦

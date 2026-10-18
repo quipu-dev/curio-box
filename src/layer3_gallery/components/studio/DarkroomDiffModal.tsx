@@ -53,7 +53,7 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
   }, [originalTags, simulation.nextTags]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-surface-overlay backdrop-blur-sm flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in">
+    <div className="fixed inset-0 z-50 bg-surface-overlay flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in">
       <div className="w-full max-w-5xl h-[90vh] bg-surface border border-border rounded-lg shadow-2xl flex flex-col overflow-hidden text-main">
         {/* 顶部标题栏 */}
         <header className="h-14 bg-background border-b border-border px-4 md:px-6 flex justify-between items-center gap-4 shrink-0 font-mono text-xs">

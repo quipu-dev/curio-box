@@ -38,12 +38,12 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       >
         <div className="absolute top-2 right-2 flex items-center gap-1 z-[2]">
           {artifact.meta.rating && artifact.meta.rating > 0 ? (
-            <div className="bg-surface/90 backdrop-blur border border-status-warn-border px-1.5 py-0.5 text-[10px] font-mono text-status-warn rounded flex items-center gap-0.5">
+            <div className="bg-surface border border-status-warn-border px-1.5 py-0.5 text-[10px] font-mono text-status-warn rounded flex items-center gap-0.5">
               <Star className="w-2.5 h-2.5 fill-current" />
               <span>{artifact.meta.rating}</span>
             </div>
           ) : null}
-          <div className="bg-surface/90 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted rounded">
+          <div className="bg-surface border border-border px-1.5 py-0.5 text-[10px] font-mono text-muted rounded">
             REV:{artifact.meta.currentRevision}
           </div>
         </div>

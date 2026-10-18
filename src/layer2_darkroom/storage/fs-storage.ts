@@ -1,20 +1,33 @@
-import type { Artifact, ArtifactMeta, NegativeLedgerEntry } from '@/types';
+import type {
+  Artifact,
+  ArtifactBundleMeta,
+  NegativeLedgerEntry,
+  ProjectedIndexRecord,
+} from '@/types';
 
 const GALLERY_DIR = '.gallery';
-const POSTERS_DIR = 'posters';
-const NEGATIVES_DIR = 'negatives';
+const ARTIFACTS_DIR = 'artifacts';
+const SNAPSHOTS_DIR = 'snapshots';
 const META_FILE = 'meta.json';
-const LEDGER_FILE = 'ledger.json';
+const POSTER_FILE = 'poster.webp';
+
 const IDB_NAME = 'curio_box_meta_db';
-const IDB_STORE = 'fs_handles';
+const IDB_VERSION = 2;
+const IDB_STORE_HANDLES = 'fs_handles';
+const IDB_STORE_CACHE = 'artifact_cache';
 const IDB_ACTIVE_KEY = 'active_directory_handle';
 
-function openHandleDB(): Promise<IDBDatabase> {
+function openStorageDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(IDB_NAME, 1);
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(IDB_STORE)) {
-        request.result.createObjectStore(IDB_STORE);
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_HANDLES)) {
+        db.createObjectStore(IDB_STORE_HANDLES);
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE_CACHE)) {
+        const cacheStore = db.createObjectStore(IDB_STORE_CACHE, { keyPath: 'id' });
+        cacheStore.createIndex('by_filename', 'filename', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -24,10 +37,10 @@ function openHandleDB(): Promise<IDBDatabase> {
 
 async function persistHandleToIDB(handle: FileSystemDirectoryHandle): Promise<void> {
   try {
-    const db = await openHandleDB();
+    const db = await openStorageDB();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(handle, IDB_ACTIVE_KEY);
+      const tx = db.transaction(IDB_STORE_HANDLES, 'readwrite');
+      tx.objectStore(IDB_STORE_HANDLES).put(handle, IDB_ACTIVE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -38,10 +51,10 @@ async function persistHandleToIDB(handle: FileSystemDirectoryHandle): Promise<vo
 
 async function loadHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
   try {
-    const db = await openHandleDB();
+    const db = await openStorageDB();
     return await new Promise<FileSystemDirectoryHandle | null>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(IDB_ACTIVE_KEY);
+      const tx = db.transaction(IDB_STORE_HANDLES, 'readonly');
+      const req = tx.objectStore(IDB_STORE_HANDLES).get(IDB_ACTIVE_KEY);
       req.onsuccess = () => resolve(req.result ?? null);
       req.onerror = () => reject(req.error);
     });
@@ -50,13 +63,54 @@ async function loadHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
   }
 }
 
+async function getAllCachedRecords(): Promise<ProjectedIndexRecord[]> {
+  try {
+    const db = await openStorageDB();
+    return await new Promise<ProjectedIndexRecord[]>((resolve) => {
+      const tx = db.transaction(IDB_STORE_CACHE, 'readonly');
+      const store = tx.objectStore(IDB_STORE_CACHE);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function putCachedRecord(record: ProjectedIndexRecord): Promise<void> {
+  try {
+    const db = await openStorageDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_CACHE, 'readwrite');
+      tx.objectStore(IDB_STORE_CACHE).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('更新 IDB 投影记录异常:', err);
+  }
+}
+
+async function deleteCachedRecord(id: string): Promise<void> {
+  try {
+    const db = await openStorageDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_CACHE, 'readwrite');
+      tx.objectStore(IDB_STORE_CACHE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
-  private metaCache: Record<string, ArtifactMeta> | null = null;
+  private posterUrlMap: Map<string, string> = new Map();
 
   public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
     this.dirHandle = handle;
-    this.metaCache = null; // 切换目录时清空元数据缓存
+    this.cleanupPosterBlobUrls();
     persistHandleToIDB(handle).catch(() => {});
   }
 
@@ -93,12 +147,206 @@ export class GalleryStorage {
     return this.dirHandle !== null;
   }
 
+  private cleanupPosterBlobUrls() {
+    for (const url of this.posterUrlMap.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.posterUrlMap.clear();
+  }
+
   /**
-   * 确保工件存在 REV 1 创世底片，补齐断层
+   * SWR 第 1 阶段：从本地 IndexedDB 瞬时读取投影工件列表（< 16ms 极速冷启动）
+   */
+  public async loadProjectedArtifacts(): Promise<Artifact[]> {
+    if (!this.dirHandle) {
+      return this.getMockArtifacts();
+    }
+
+    const records = await getAllCachedRecords();
+    if (records.length === 0) {
+      // 首次启动或缓存被清空时，降级执行快速物理扫描
+      return this.reconcileWorkspace();
+    }
+
+    const artifacts: Artifact[] = [];
+    for (const rec of records) {
+      const posterUrl: string | undefined = this.posterUrlMap.get(rec.id);
+      if (!posterUrl && rec.hasPoster) {
+        // 尝试按需异步预热封面
+        this.loadPosterBlobUrl(rec.id).then((url) => {
+          if (url) this.posterUrlMap.set(rec.id, url);
+        });
+      }
+      artifacts.push({
+        meta: rec.meta,
+        posterBlobUrl: posterUrl,
+      });
+    }
+
+    return artifacts.sort((a, b) => {
+      const timeA = new Date(a.meta.createdAt).getTime() || 0;
+      const timeB = new Date(b.meta.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
+  }
+
+  /**
+   * SWR 第 2 阶段：后台轻量对齐工作区（比对根目录 HTML 与自包含沙盒）
+   */
+  public async reconcileWorkspace(
+    onSync?: (e: { type: 'noop' | 'updated'; artifacts: Artifact[] }) => void,
+  ): Promise<Artifact[]> {
+    if (!this.dirHandle) {
+      const mock = this.getMockArtifacts();
+      onSync?.({ type: 'noop', artifacts: mock });
+      return mock;
+    }
+
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+
+    // 1. 扫描根目录物理 HTML 文件摘要
+    const rootHtmlMap = new Map<string, { lastModified: number }>();
+    const rootEntries = (
+      this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+    ).values();
+
+    for await (const entry of rootEntries) {
+      if (entry.kind === 'file' && entry.name.endsWith('.html')) {
+        try {
+          const fileHandle = await this.dirHandle.getFileHandle(entry.name);
+          const file = await fileHandle.getFile();
+          rootHtmlMap.set(entry.name, { lastModified: file.lastModified });
+        } catch {}
+      }
+    }
+
+    // 2. 扫描 .gallery/artifacts/ 下的所有工件沙盒
+    const bundleMap = new Map<string, ArtifactBundleMeta>();
+    const bundlePosterMap = new Map<string, boolean>();
+    const bundleEntries = (
+      artifactsDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+    ).values();
+
+    for await (const entry of bundleEntries) {
+      if (entry.kind === 'directory') {
+        const bundleId = entry.name;
+        try {
+          const bDir = await artifactsDir.getDirectoryHandle(bundleId);
+          const metaHandle = await bDir.getFileHandle(META_FILE);
+          const metaFile = await metaHandle.getFile();
+          const metaText = await metaFile.text();
+          const meta: ArtifactBundleMeta = JSON.parse(metaText);
+
+          let hasPoster = false;
+          try {
+            await bDir.getFileHandle(POSTER_FILE);
+            hasPoster = true;
+          } catch {}
+
+          bundleMap.set(bundleId, meta);
+          bundlePosterMap.set(bundleId, hasPoster);
+        } catch {}
+      }
+    }
+
+    // 3. 自愈与对齐：
+    // 3.1 针对根目录未初始化沙盒的孤立 HTML，自动创建标准自包含包 (EC-04)
+    const existingFilenamesInBundles = new Set(
+      Array.from(bundleMap.values()).map((m) => m.filename),
+    );
+
+    for (const [htmlName] of rootHtmlMap.entries()) {
+      if (!existingFilenamesInBundles.has(htmlName)) {
+        try {
+          const fileHandle = await this.dirHandle.getFileHandle(htmlName);
+          const file = await fileHandle.getFile();
+          const content = await file.text();
+          const defaultName = htmlName.replace(/\.html$/, '');
+          const created = await this.createArtifact(
+            htmlName,
+            content,
+            defaultName,
+            ['形态:原生html', '状态:未分类'],
+            '',
+          );
+          bundleMap.set(created.meta.id, created.meta);
+          bundlePosterMap.set(created.meta.id, false);
+        } catch (e) {
+          console.warn(`初始化孤立工件沙盒失败 [${htmlName}]:`, e);
+        }
+      }
+    }
+
+    // 4. 构建最新工件列表并同步刷新 IDB 投影
+    const resultArtifacts: Artifact[] = [];
+    const activeBundleIds = new Set<string>();
+
+    for (const [id, meta] of bundleMap.entries()) {
+      // 若沙盒关联的根目录 HTML 文件已不复存在，暂时跳过该沙盒（保留或待后续软删除）
+      if (!rootHtmlMap.has(meta.filename)) {
+        continue;
+      }
+
+      activeBundleIds.add(id);
+      const hasPoster = bundlePosterMap.get(id) ?? false;
+      const htmlStats = rootHtmlMap.get(meta.filename);
+
+      // 同步写入 IDB 投影缓存
+      const projRecord: ProjectedIndexRecord = {
+        id,
+        filename: meta.filename,
+        htmlLastModified: htmlStats?.lastModified || 0,
+        bundleLastModified: new Date(meta.updatedAt).getTime() || 0,
+        meta,
+        hasPoster,
+      };
+      putCachedRecord(projRecord).catch(() => {});
+
+      let posterBlobUrl = this.posterUrlMap.get(id);
+      if (!posterBlobUrl && hasPoster) {
+        posterBlobUrl = await this.loadPosterBlobUrl(id);
+        if (posterBlobUrl) {
+          this.posterUrlMap.set(id, posterBlobUrl);
+        }
+      }
+
+      resultArtifacts.push({
+        meta,
+        posterBlobUrl,
+      });
+    }
+
+    // 清理 IDB 中已不再存在的废弃投影
+    const allCached = await getAllCachedRecords();
+    for (const cached of allCached) {
+      if (!activeBundleIds.has(cached.id)) {
+        deleteCachedRecord(cached.id).catch(() => {});
+      }
+    }
+
+    resultArtifacts.sort((a, b) => {
+      const timeA = new Date(a.meta.createdAt).getTime() || 0;
+      const timeB = new Date(b.meta.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
+
+    onSync?.({ type: 'updated', artifacts: resultArtifacts });
+    return resultArtifacts;
+  }
+
+  /**
+   * 兼容原有扫描方法：底层直接委托给 reconcileWorkspace
+   */
+  public async scanArtifacts(): Promise<Artifact[]> {
+    return this.reconcileWorkspace();
+  }
+
+  /**
+   * 确保工件在专属沙盒中存在 REV 1 创世底片
    */
   public async ensureGenesisSnapshot(artifactId: string, initialContent: string): Promise<void> {
     if (!this.dirHandle) return;
-
     try {
       const existingRev1 = await this.loadNegativeRevision(artifactId, 1);
       if (!existingRev1) {
@@ -110,7 +358,7 @@ export class GalleryStorage {
   }
 
   /**
-   * 创建并保存一个新工件，自动记录初始版本 REV:1 与不可变的创世导入时间 createdAt
+   * 创建并封存新工件至 .gallery/artifacts/<id>/
    */
   public async createArtifact(
     filename: string,
@@ -120,8 +368,20 @@ export class GalleryStorage {
     description = '',
   ): Promise<Artifact> {
     const now = new Date().toISOString();
-    const newMeta: ArtifactMeta = {
-      id: `art_${Math.random().toString(16).slice(2, 10)}`,
+    const artifactId = `art_${Math.random().toString(16).slice(2, 10)}`;
+
+    const genesisHistory: NegativeLedgerEntry[] = [
+      {
+        revision: 1,
+        timestamp: now,
+        action: 'genesis',
+        description: '初始版本',
+      },
+    ];
+
+    const bundleMeta: ArtifactBundleMeta = {
+      schemaVersion: 2,
+      id: artifactId,
       name,
       filename,
       tags,
@@ -130,30 +390,54 @@ export class GalleryStorage {
       currentRevision: 1,
       createdAt: now,
       updatedAt: now,
+      history: genesisHistory,
     };
 
     if (this.dirHandle) {
-      // 1. 写入 HTML 源文件
+      // 1. 写入根目录 HTML
       const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
 
-      // 2. 建立 REV:1 初始版本快照（按不可变 id 存储）
-      await this.recordNegativeRevision(newMeta.id, 1, content, 'genesis', '初始版本');
+      // 2. 初始化工件沙盒目录
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
 
-      // 3. 记录元数据
-      await this.saveMeta(newMeta);
+      // 3. 写入创世快照
+      const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
+      const revHandle = await snapshotsDir.getFileHandle('rev-0001.snapshot', { create: true });
+      const snapWritable = await revHandle.createWritable();
+      await snapWritable.write(content);
+      await snapWritable.close();
+
+      // 4. 写入沙盒专属 meta.json
+      const metaHandle = await bundleDir.getFileHandle(META_FILE, { create: true });
+      const metaWritable = await metaHandle.createWritable();
+      await metaWritable.write(JSON.stringify(bundleMeta, null, 2));
+      await metaWritable.close();
+
+      // 5. 写入 IDB 投影缓存
+      const file = await fileHandle.getFile();
+      putCachedRecord({
+        id: artifactId,
+        filename,
+        htmlLastModified: file.lastModified,
+        bundleLastModified: new Date(now).getTime(),
+        meta: bundleMeta,
+        hasPoster: false,
+      }).catch(() => {});
     }
 
     return {
-      meta: newMeta,
+      meta: bundleMeta,
       sourceCode: content,
     };
   }
 
   /**
-   * 按需读取指定工件的最新 HTML 源码内容
+   * 读取指定工件活跃源码
    */
   public async loadArtifactSource(filename: string): Promise<string> {
     if (!this.dirHandle) {
@@ -170,56 +454,9 @@ export class GalleryStorage {
     }
   }
 
-  public async scanArtifacts(): Promise<Artifact[]> {
-    if (!this.dirHandle) {
-      return this.getMockArtifacts();
-    }
-
-    const artifacts: Artifact[] = [];
-    const metaMap = await this.readAllMeta();
-
-    const entries = (
-      this.dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }
-    ).values();
-
-    const now = new Date().toISOString();
-
-    for await (const entry of entries) {
-      if (entry.kind === 'file' && entry.name.endsWith('.html')) {
-        const rawMeta = metaMap[entry.name];
-        const meta: ArtifactMeta = rawMeta
-          ? {
-              ...rawMeta,
-              // 兼容老数据或意外缺失的 createdAt
-              createdAt: rawMeta.createdAt || rawMeta.updatedAt || now,
-            }
-          : {
-              id: `art_${Math.random().toString(16).slice(2, 10)}`,
-              name: entry.name.replace(/\.html$/, ''),
-              filename: entry.name,
-              tags: ['形态:原生html', '状态:未分类'],
-              currentRevision: 1,
-              createdAt: now,
-              updatedAt: now,
-            };
-
-        const posterBlobUrl = await this.loadPosterBlobUrl(entry.name);
-
-        artifacts.push({
-          meta,
-          posterBlobUrl,
-        });
-      }
-    }
-
-    // 默认按导入时间从新到旧排序
-    return artifacts.sort((a, b) => {
-      const timeA = new Date(a.meta.createdAt).getTime() || 0;
-      const timeB = new Date(b.meta.createdAt).getTime() || 0;
-      return timeB - timeA;
-    });
-  }
-
+  /**
+   * 保存工件源码并记录沙盒内快照
+   */
   public async saveArtifactSource(
     filename: string,
     artifactId: string,
@@ -230,88 +467,126 @@ export class GalleryStorage {
   ): Promise<void> {
     if (!this.dirHandle) return;
 
-    const fileHandle = await this.dirHandle.getFileHandle(filename, {
-      create: true,
-    });
+    // 1. 写入根目录 HTML
+    const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(newContent);
     await writable.close();
 
+    // 2. 写入快照与更新沙盒元档案
     await this.recordNegativeRevision(artifactId, revision, newContent, action, description);
   }
 
-  public async savePoster(filename: string, blob: Blob): Promise<string> {
+  /**
+   * 定格封面保存至 .gallery/artifacts/<id>/poster.webp
+   */
+  public async savePoster(
+    filename: string,
+    blob: Blob,
+    explicitArtifactId?: string,
+  ): Promise<string> {
+    const objectUrl = URL.createObjectURL(blob);
     if (!this.dirHandle) {
-      return URL.createObjectURL(blob);
+      return objectUrl;
     }
 
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR, { create: true });
-    const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-    const posterHandle = await postersDir.getFileHandle(posterFilename, {
-      create: true,
-    });
+    const artifactId = explicitArtifactId || (await this.findArtifactIdByFilename(filename));
+    if (!artifactId) {
+      return objectUrl;
+    }
 
-    const writable = await posterHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
 
-    return URL.createObjectURL(blob);
+      const posterHandle = await bundleDir.getFileHandle(POSTER_FILE, { create: true });
+      const writable = await posterHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
+      this.posterUrlMap.set(artifactId, objectUrl);
+
+      // 刷新 IDB 投影 hasPoster 字段
+      const all = await getAllCachedRecords();
+      const target = all.find((r) => r.id === artifactId);
+      if (target) {
+        target.hasPoster = true;
+        putCachedRecord(target).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('保存封面海报失败:', err);
+    }
+
+    return objectUrl;
   }
 
-  public async saveMeta(meta: ArtifactMeta): Promise<void> {
+  public async saveMeta(meta: ArtifactBundleMeta): Promise<void> {
     if (!this.dirHandle) return;
-    const allMeta = await this.readAllMeta();
-    allMeta[meta.filename] = meta;
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+      const bundleDir = await artifactsDir.getDirectoryHandle(meta.id, { create: true });
 
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = await galleryDir.getFileHandle(META_FILE, {
-      create: true,
-    });
-    const writable = await metaHandle.createWritable();
-    await writable.write(JSON.stringify(allMeta, null, 2));
-    await writable.close();
+      const metaHandle = await bundleDir.getFileHandle(META_FILE, { create: true });
+      const writable = await metaHandle.createWritable();
+      await writable.write(JSON.stringify(meta, null, 2));
+      await writable.close();
+
+      // 更新 IDB 投影
+      putCachedRecord({
+        id: meta.id,
+        filename: meta.filename,
+        htmlLastModified: 0,
+        bundleLastModified: new Date(meta.updatedAt).getTime(),
+        meta,
+        hasPoster: this.posterUrlMap.has(meta.id),
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('写入沙盒 meta.json 失败:', err);
+    }
   }
 
   /**
-   * 局部更新工件元数据（如打标签、星级评分等）：严格保留 createdAt，仅更新 updatedAt
+   * 局部更新工件元档案
    */
   public async updateArtifactMeta(
     filename: string,
-    partialMeta: Partial<ArtifactMeta>,
-  ): Promise<ArtifactMeta> {
+    partialMeta: Partial<Omit<ArtifactBundleMeta, 'history' | 'id'>>,
+  ): Promise<ArtifactBundleMeta> {
     const now = new Date().toISOString();
-    const allMeta = await this.readAllMeta();
-    const existing = allMeta[filename] || {
-      id: `art_${Math.random().toString(16).slice(2, 10)}`,
-      name: filename.replace(/\.html$/, ''),
-      filename,
-      tags: ['形态:原生html'],
-      currentRevision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const artifactId = await this.findArtifactIdByFilename(filename);
 
-    const updated: ArtifactMeta = {
-      ...existing,
-      ...partialMeta,
-      createdAt: existing.createdAt || now, // 绝对保留导入创世时间
-      updatedAt: now,
-    };
-
-    allMeta[filename] = updated;
-    if (this.dirHandle) {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-      const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
-      const writable = await metaHandle.createWritable();
-      await writable.write(JSON.stringify(allMeta, null, 2));
-      await writable.close();
+    let existingMeta: ArtifactBundleMeta | null = null;
+    if (artifactId && this.dirHandle) {
+      existingMeta = await this.loadBundleMeta(artifactId);
     }
+
+    const updated: ArtifactBundleMeta = existingMeta
+      ? {
+          ...existingMeta,
+          ...partialMeta,
+          updatedAt: now,
+        }
+      : {
+          schemaVersion: 2,
+          id: artifactId || `art_${Math.random().toString(16).slice(2, 10)}`,
+          name: filename.replace(/\.html$/, ''),
+          filename,
+          tags: ['形态:原生html'],
+          currentRevision: 1,
+          createdAt: now,
+          updatedAt: now,
+          history: [],
+          ...partialMeta,
+        };
+
+    await this.saveMeta(updated);
     return updated;
   }
 
   /**
-   * 重命名工件（支持重命名物理文件与底片快照链迁移）：透传保留原始 createdAt
+   * 重命名工件（同时更新根目录文件与沙盒内元档案）
    */
   public async renameArtifact(
     oldFilename: string,
@@ -323,174 +598,107 @@ export class GalleryStorage {
     }
 
     const now = new Date().toISOString();
-    const oldBase = oldFilename.replace(/\.html$/, '');
-    const newBase = newFilename.replace(/\.html$/, '');
-    const resolvedDisplayName = newName || newBase;
+    const resolvedName = newName || newFilename.replace(/\.html$/, '');
+    const artifactId = await this.findArtifactIdByFilename(oldFilename);
 
-    // 绝对安全防御：若新旧文件名完全一致，直接安全返回
-    if (oldFilename === newFilename) {
-      const allMeta = await this.readAllMeta();
-      const existing = allMeta[oldFilename];
-      if (existing && existing.name !== resolvedDisplayName) {
-        existing.name = resolvedDisplayName;
-        existing.updatedAt = now;
-        await this.saveMeta(existing);
-      }
-      const fileHandle = await this.dirHandle.getFileHandle(oldFilename);
-      const file = await fileHandle.getFile();
-      const content = await file.text();
-      const posterBlobUrl = await this.loadPosterBlobUrl(oldFilename);
-      return {
-        meta: existing || {
-          id: `art_${Math.random().toString(16).slice(2, 10)}`,
-          name: resolvedDisplayName,
-          filename: oldFilename,
-          tags: ['形态:原生html'],
-          currentRevision: 1,
-          createdAt: now,
-          updatedAt: now,
-        },
-        sourceCode: content,
-        posterBlobUrl,
-      };
+    if (!artifactId) {
+      throw new Error(`未找到工件 [${oldFilename}] 的沙盒 ID`);
     }
 
-    // 1. 读取原工件内容
     const oldFileHandle = await this.dirHandle.getFileHandle(oldFilename);
     const oldFile = await oldFileHandle.getFile();
     const content = await oldFile.text();
 
-    // 2. 写入新文件并在确认路径相异后安全移除旧文件
-    const newFileHandle = await this.dirHandle.getFileHandle(newFilename, { create: true });
-    const newWritable = await newFileHandle.createWritable();
-    await newWritable.write(content);
-    await newWritable.close();
-
     if (oldFilename !== newFilename) {
+      const newFileHandle = await this.dirHandle.getFileHandle(newFilename, { create: true });
+      const newWritable = await newFileHandle.createWritable();
+      await newWritable.write(content);
+      await newWritable.close();
+
       try {
         await (
           this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
         ).removeEntry(oldFilename);
       } catch (err) {
-        console.warn('移除旧文件失败:', err);
+        console.warn('移除原文件失败:', err);
       }
     }
 
-    // 3. 迁移封面图 (posters)，底片快照已基于不可变 ID 存储，无需任何搬迁操作
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      try {
-        const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
-        const oldPosterHandle = await postersDir.getFileHandle(`${oldBase}.webp`);
-        const oldPosterFile = await oldPosterHandle.getFile();
-        const newPosterHandle = await postersDir.getFileHandle(`${newBase}.webp`, { create: true });
-        const pWritable = await newPosterHandle.createWritable();
-        await pWritable.write(await oldPosterFile.arrayBuffer());
-        await pWritable.close();
-        if (oldBase !== newBase) {
-          await (
-            postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
-          ).removeEntry(`${oldBase}.webp`);
+    const currentMeta = await this.loadBundleMeta(artifactId);
+    const updatedMeta: ArtifactBundleMeta = currentMeta
+      ? {
+          ...currentMeta,
+          filename: newFilename,
+          name: resolvedName,
+          updatedAt: now,
         }
-      } catch {
-        // 无封面时忽略
-      }
-    } catch (err) {
-      console.warn('迁移关联资源异常:', err);
-    }
+      : {
+          schemaVersion: 2,
+          id: artifactId,
+          filename: newFilename,
+          name: resolvedName,
+          tags: ['形态:原生html'],
+          currentRevision: 1,
+          createdAt: now,
+          updatedAt: now,
+          history: [],
+        };
 
-    // 4. 更新元数据索引，透传 createdAt 与不可变 id
-    const allMeta = await this.readAllMeta();
-    const oldMeta = allMeta[oldFilename] || {
-      id: `art_${Math.random().toString(16).slice(2, 10)}`,
-      name: newName || newBase,
-      filename: oldFilename,
-      tags: ['形态:原生html'],
-      currentRevision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    delete allMeta[oldFilename];
-    const newMeta: ArtifactMeta = {
-      ...oldMeta,
-      filename: newFilename,
-      name: newName || oldMeta.name,
-      createdAt: oldMeta.createdAt || now,
-      updatedAt: now,
-    };
-    allMeta[newFilename] = newMeta;
-
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
-    const mWritable = await metaHandle.createWritable();
-    await mWritable.write(JSON.stringify(allMeta, null, 2));
-    await mWritable.close();
-
-    const posterBlobUrl = await this.loadPosterBlobUrl(newFilename);
+    await this.saveMeta(updatedMeta);
+    const posterBlobUrl = await this.loadPosterBlobUrl(artifactId);
 
     return {
-      meta: newMeta,
+      meta: updatedMeta,
       sourceCode: content,
       posterBlobUrl,
     };
   }
 
   /**
-   * 级联删除工件（删除 HTML 源码、封面、底片版本链与元数据）
+   * 级联销毁工件（彻底删除 HTML 物理文件及其专属沙盒）
    */
   public async deleteArtifact(filename: string): Promise<void> {
     if (!this.dirHandle) {
       throw new Error('演示模式下暂不支持物理删除');
     }
 
-    const baseName = filename.replace(/\.html$/, '');
-    const allMeta = await this.readAllMeta();
-    const targetId = allMeta[filename]?.id;
+    const artifactId = await this.findArtifactIdByFilename(filename);
 
-    // 1. 删除根目录 HTML 文件
+    // 1. 删除根目录 HTML
     try {
       await (
         this.dirHandle as unknown as { removeEntry: (name: string) => Promise<void> }
       ).removeEntry(filename);
     } catch (err) {
-      console.warn('删除 HTML 源文件失败:', err);
+      console.warn('删除 HTML 源码失败:', err);
     }
 
-    // 2. 清理关联底片与封面
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      if (targetId) {
-        try {
-          const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-          await (
-            negativesDir as unknown as {
-              removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
-            }
-          ).removeEntry(targetId, { recursive: true });
-        } catch {}
-      }
-
+    // 2. 递归删除专属沙盒
+    if (artifactId) {
       try {
-        const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
+        const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+        const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR);
         await (
-          postersDir as unknown as { removeEntry: (name: string) => Promise<void> }
-        ).removeEntry(`${baseName}.webp`);
-      } catch {}
-
-      // 3. 从元数据中移除
-      if (allMeta[filename]) {
-        delete allMeta[filename];
-        const metaHandle = await galleryDir.getFileHandle(META_FILE, { create: true });
-        const mWritable = await metaHandle.createWritable();
-        await mWritable.write(JSON.stringify(allMeta, null, 2));
-        await mWritable.close();
+          artifactsDir as unknown as {
+            removeEntry: (name: string, opt: { recursive: boolean }) => Promise<void>;
+          }
+        ).removeEntry(artifactId, { recursive: true });
+      } catch (e) {
+        console.warn('删除工件沙盒异常:', e);
       }
-    } catch (err) {
-      console.warn('清理关联元数据失败:', err);
+
+      deleteCachedRecord(artifactId).catch(() => {});
+      const posterUrl = this.posterUrlMap.get(artifactId);
+      if (posterUrl) {
+        URL.revokeObjectURL(posterUrl);
+        this.posterUrlMap.delete(artifactId);
+      }
     }
   }
 
+  /**
+   * 记录版本快照至沙盒内 snapshots/rev-XXXX.snapshot
+   */
   public async recordNegativeRevision(
     artifactId: string,
     revision: number,
@@ -499,60 +707,57 @@ export class GalleryStorage {
     description?: string,
   ): Promise<void> {
     if (!this.dirHandle) return;
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR, { create: true });
-    const baseDir = await negativesDir.getDirectoryHandle(artifactId, {
-      create: true,
-    });
 
-    // 写入底片快照文件
-    const revHandle = await baseDir.getFileHandle(
-      `rev-${String(revision).padStart(4, '0')}.snapshot`,
-      { create: true },
-    );
+    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+    const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+    const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
+    const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
+
+    // 1. 写入快照
+    const snapFilename = `rev-${String(revision).padStart(4, '0')}.snapshot`;
+    const revHandle = await snapshotsDir.getFileHandle(snapFilename, { create: true });
     const writable = await revHandle.createWritable();
     await writable.write(content);
     await writable.close();
 
-    // 更新底片台账 (Ledger)
-    try {
-      let ledger: NegativeLedgerEntry[] = [];
-      try {
-        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
-        const file = await ledgerFile.getFile();
-        ledger = JSON.parse(await file.text());
-      } catch {
-        ledger = [];
-      }
+    // 2. 同步更新沙盒内部历史修订台账
+    const bundleMeta = await this.loadBundleMeta(artifactId);
+    if (bundleMeta) {
+      const history = (bundleMeta.history || []).filter((item) => item.revision !== revision);
+      const commitDesc =
+        description || (action === 'genesis' ? '初始版本' : `版本快照 REV:${revision}`);
 
-      ledger = ledger.filter((item) => item.revision !== revision);
-      ledger.push({
+      history.push({
         revision,
         timestamp: new Date().toISOString(),
         action,
-        description:
-          description || (action === 'genesis' ? '初始版本' : `版本快照 REV:${revision}`),
+        description: commitDesc,
       });
-      ledger.sort((a, b) => a.revision - b.revision);
 
-      const ledgerHandle = await baseDir.getFileHandle(LEDGER_FILE, { create: true });
-      const ledgerWritable = await ledgerHandle.createWritable();
-      await ledgerWritable.write(JSON.stringify(ledger, null, 2));
-      await ledgerWritable.close();
-    } catch (err) {
-      console.warn('更新底片台账失败:', err);
+      history.sort((a, b) => a.revision - b.revision);
+
+      bundleMeta.history = history;
+      bundleMeta.currentRevision = revision;
+      bundleMeta.lastCommitMessage = commitDesc;
+      bundleMeta.updatedAt = new Date().toISOString();
+
+      await this.saveMeta(bundleMeta);
     }
   }
 
+  /**
+   * 读取沙盒内指定快照
+   */
   public async loadNegativeRevision(artifactId: string, revision: number): Promise<string | null> {
     if (!this.dirHandle) return null;
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(artifactId);
-      const revHandle = await baseDir.getFileHandle(
-        `rev-${String(revision).padStart(4, '0')}.snapshot`,
-      );
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR);
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId);
+      const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR);
+
+      const snapFilename = `rev-${String(revision).padStart(4, '0')}.snapshot`;
+      const revHandle = await snapshotsDir.getFileHandle(snapFilename);
       const file = await revHandle.getFile();
       return await file.text();
     } catch {
@@ -561,7 +766,7 @@ export class GalleryStorage {
   }
 
   /**
-   * 获取指定工件底片链上的所有历史修订列表
+   * 从沙盒内 meta.json 极速读取历史修订列表
    */
   public async listNegativeRevisions(artifactId: string): Promise<NegativeLedgerEntry[]> {
     if (!this.dirHandle) {
@@ -575,66 +780,66 @@ export class GalleryStorage {
       ];
     }
 
+    const meta = await this.loadBundleMeta(artifactId);
+    if (meta?.history && meta.history.length > 0) {
+      return [...meta.history].sort((a, b) => b.revision - a.revision);
+    }
+
+    return [];
+  }
+
+  private async loadBundleMeta(artifactId: string): Promise<ArtifactBundleMeta | null> {
+    if (!this.dirHandle) return null;
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const negativesDir = await galleryDir.getDirectoryHandle(NEGATIVES_DIR);
-      const baseDir = await negativesDir.getDirectoryHandle(artifactId);
-
-      try {
-        const ledgerFile = await baseDir.getFileHandle(LEDGER_FILE);
-        const file = await ledgerFile.getFile();
-        const ledger: NegativeLedgerEntry[] = JSON.parse(await file.text());
-        return ledger.sort((a, b) => b.revision - a.revision);
-      } catch {
-        // 台账不存在时扫描快照文件兜底
-        const results: NegativeLedgerEntry[] = [];
-        const entries = (
-          baseDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
-        ).values();
-        for await (const entry of entries) {
-          const match = entry.name.match(/^rev-(\d+)\.snapshot$/);
-          if (match) {
-            const rev = Number.parseInt(match[1], 10);
-            results.push({
-              revision: rev,
-              timestamp: new Date().toISOString(),
-              action: rev === 1 ? 'genesis' : 'patch',
-              description: rev === 1 ? '初始版本' : `版本快照 REV:${rev}`,
-            });
-          }
-        }
-        return results.sort((a, b) => b.revision - a.revision);
-      }
-    } catch {
-      return [];
-    }
-  }
-
-  private async readAllMeta(): Promise<Record<string, ArtifactMeta>> {
-    if (this.metaCache) {
-      return this.metaCache;
-    }
-    if (!this.dirHandle) return {};
-    try {
-      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-      const metaHandle = await galleryDir.getFileHandle(META_FILE);
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR);
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId);
+      const metaHandle = await bundleDir.getFileHandle(META_FILE);
       const file = await metaHandle.getFile();
-      const text = await file.text();
-      this.metaCache = JSON.parse(text);
-      return this.metaCache || {};
+      return JSON.parse(await file.text());
     } catch {
-      this.metaCache = {};
-      return {};
+      return null;
     }
   }
 
-  private async loadPosterBlobUrl(filename: string): Promise<string | undefined> {
+  private async findArtifactIdByFilename(filename: string): Promise<string | null> {
+    const cached = await getAllCachedRecords();
+    const hit = cached.find((r) => r.filename === filename);
+    if (hit) return hit.id;
+
+    if (!this.dirHandle) return null;
+    try {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR);
+      const entries = (
+        artifactsDir as unknown as { values: () => AsyncIterable<FileSystemHandle> }
+      ).values();
+
+      for await (const entry of entries) {
+        if (entry.kind === 'directory') {
+          const bDir = await artifactsDir.getDirectoryHandle(entry.name);
+          try {
+            const mHandle = await bDir.getFileHandle(META_FILE);
+            const mFile = await mHandle.getFile();
+            const meta: ArtifactBundleMeta = JSON.parse(await mFile.text());
+            if (meta.filename === filename) {
+              return meta.id;
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    return null;
+  }
+
+  private async loadPosterBlobUrl(artifactId: string): Promise<string | undefined> {
     if (!this.dirHandle) return undefined;
     try {
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR);
-      const postersDir = await galleryDir.getDirectoryHandle(POSTERS_DIR);
-      const posterFilename = `${filename.replace(/\.html$/, '')}.webp`;
-      const posterHandle = await postersDir.getFileHandle(posterFilename);
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR);
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId);
+      const posterHandle = await bundleDir.getFileHandle(POSTER_FILE);
       const file = await posterHandle.getFile();
       return URL.createObjectURL(file);
     } catch {
@@ -646,6 +851,7 @@ export class GalleryStorage {
     return [
       {
         meta: {
+          schemaVersion: 2,
           id: 'art_fluid2d',
           name: '纳维-斯托克斯二维流体仿真',
           filename: 'fluid-simulation.html',
@@ -653,6 +859,14 @@ export class GalleryStorage {
           currentRevision: 1,
           createdAt: '2025-02-28T12:00:00Z',
           updatedAt: '2025-02-28T12:00:00Z',
+          history: [
+            {
+              revision: 1,
+              timestamp: '2025-02-28T12:00:00Z',
+              action: 'genesis',
+              description: '初始版本',
+            },
+          ],
         },
         sourceCode: `<!DOCTYPE html>
 <html>

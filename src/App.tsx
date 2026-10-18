@@ -84,9 +84,24 @@ function MainApp() {
     }
   }, [stageFilename, studioFilename, composerInitialCode]);
 
-  const loadArtifacts = useCallback(async () => {
-    const list = await galleryStorage.scanArtifacts();
-    setArtifacts(list);
+  /**
+   * SWR (Stale-While-Revalidate) 两段式工作区加载：
+   * 1. 优先从 IDB 投影吐出内存快照 (< 16ms 瞬时无白屏渲染)
+   * 2. 后台静默执行磁盘 reconcile 对齐并无感合并
+   */
+  const loadArtifactsSWR = useCallback(async () => {
+    // 阶段一：首屏秒开
+    const projected = await galleryStorage.loadProjectedArtifacts();
+    if (projected.length > 0) {
+      setArtifacts(projected);
+    }
+
+    // 阶段二：后台物理对齐
+    await galleryStorage.reconcileWorkspace(({ type, artifacts: latest }) => {
+      if (type === 'updated') {
+        setArtifacts(latest);
+      }
+    });
   }, []);
 
   // 自动尝试恢复已持久化的文件夹
@@ -99,12 +114,12 @@ function MainApp() {
       if (result.permission === 'granted' && result.handle) {
         setHasDirectory(true);
         setPendingHandle(null);
-        await loadArtifacts();
+        await loadArtifactsSWR();
       } else if (result.handle) {
         setPendingHandle(result.handle);
-        await loadArtifacts();
+        await loadArtifactsSWR();
       } else {
-        await loadArtifacts();
+        await loadArtifactsSWR();
       }
     }
 
@@ -112,7 +127,7 @@ function MainApp() {
     return () => {
       isCancelled = true;
     };
-  }, [loadArtifacts]);
+  }, [loadArtifactsSWR]);
 
   const handleRequestPendingPermission = async () => {
     if (!pendingHandle) return;
@@ -127,7 +142,7 @@ function MainApp() {
         galleryStorage.setDirectoryHandle(pendingHandle);
         setHasDirectory(true);
         setPendingHandle(null);
-        await loadArtifacts();
+        await loadArtifactsSWR();
       }
     } catch (err) {
       console.error('授权目录失败:', err);
@@ -141,7 +156,7 @@ function MainApp() {
         const handle = await fsaWindow.showDirectoryPicker();
         galleryStorage.setDirectoryHandle(handle);
         setHasDirectory(true);
-        await loadArtifacts();
+        await loadArtifactsSWR();
         toast.success(`成功关联目录: ${handle.name}`);
       } else {
         toast.warn('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge。');

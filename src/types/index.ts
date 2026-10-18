@@ -23,12 +23,20 @@ export interface Tag {
   value: string;
 }
 
-export interface NegativeLedgerEntry {
+/**
+ * 历史快照版本提交记录（对标 Git Commit）
+ */
+export interface CommitLogEntry {
   revision: number;
   timestamp: string;
   action: 'genesis' | 'patch' | 'rollback';
-  description?: string;
+  message: string;
 }
+
+/**
+ * 历史记录类型别名
+ */
+export type NegativeLedgerEntry = CommitLogEntry;
 
 export interface NegativeRevision {
   revision: number;
@@ -52,8 +60,16 @@ export interface ArtifactBundleMeta {
   updatedAt: string;
   rating?: number;
   description?: string;
-  lastCommitMessage?: string;
-  history: NegativeLedgerEntry[];
+  history: CommitLogEntry[];
+}
+
+/**
+ * 派生函数：获取工件 HEAD 当前版本的最新 Commit 提交说明
+ */
+export function getLastCommitMessage(meta: ArtifactBundleMeta): string {
+  if (!meta.history || meta.history.length === 0) return '初始版本';
+  const head = meta.history.find((item) => item.revision === meta.currentRevision);
+  return head?.message || meta.history[meta.history.length - 1]?.message || '初始版本';
 }
 
 /**

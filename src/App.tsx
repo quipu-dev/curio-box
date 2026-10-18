@@ -50,12 +50,25 @@ function MainApp() {
     navigateToGallery,
   } = useHashRoute();
 
+  // 派生当前激活的画册元数据及其受限工件列表（前置以避免 TDZ）
+  const activeAlbumMeta = useMemo(() => {
+    if (!activeAlbumId) return null;
+    return albums.find((a) => a.id === activeAlbumId) ?? null;
+  }, [albums, activeAlbumId]);
+
+  const activeAlbumArtifacts = useMemo(() => {
+    if (!activeAlbumMeta) return [];
+    return resolveAlbumArtifacts(activeAlbumMeta, artifacts);
+  }, [activeAlbumMeta, artifacts]);
+
   // 处于画册大盘、画册详情或在画册上下文内操作时，均属于画册视图空间
   const isAlbumsView =
     currentRoute.type === 'albums' ||
     currentRoute.type === 'album-detail' ||
     activeAlbumId !== null;
-  const isAlbumDetailView = currentRoute.type === 'album-detail' && activeAlbumId !== null;
+
+  // 只要处于画册上下文且存在对应画册，底层视口即保持画册详情
+  const isAlbumDetailView = Boolean(activeAlbumId && activeAlbumMeta);
 
   // 档案抽屉检视状态直接由路由单向派生
   const inspectingFilename = inspectFilename;
@@ -215,17 +228,6 @@ function MainApp() {
   const albumViews: Album[] = useMemo(() => {
     return albums.map((meta) => buildAlbumView(meta, artifacts));
   }, [albums, artifacts]);
-
-  // 派生当前激活的画册元数据及其受限工件列表
-  const activeAlbumMeta = useMemo(() => {
-    if (!activeAlbumId) return null;
-    return albums.find((a) => a.id === activeAlbumId) ?? null;
-  }, [albums, activeAlbumId]);
-
-  const activeAlbumArtifacts = useMemo(() => {
-    if (!activeAlbumMeta) return [];
-    return resolveAlbumArtifacts(activeAlbumMeta, artifacts);
-  }, [activeAlbumMeta, artifacts]);
 
   // 派生当前活动状态工件
   const stageArtifact = useMemo(
@@ -441,13 +443,13 @@ function MainApp() {
       prev.map((item) => (item.meta.filename === oldFilename ? newArt : item)),
     );
     if (inspectingFilename === oldFilename) {
-      navigateToInspect(newFilename);
+      navigateToInspect(newFilename, activeAlbumId ?? undefined);
     }
     if (stageFilename === oldFilename) {
-      navigateToStage(newFilename);
+      navigateToStage(newFilename, activeAlbumId ?? undefined);
     }
     if (studioFilename === oldFilename) {
-      navigateToStudio(newFilename);
+      navigateToStudio(newFilename, activeAlbumId ?? undefined);
     }
   };
 
@@ -459,7 +461,11 @@ function MainApp() {
       stageFilename === filename ||
       studioFilename === filename
     ) {
-      navigateToGallery();
+      if (activeAlbumId) {
+        navigateToAlbumDetail(activeAlbumId);
+      } else {
+        navigateToGallery();
+      }
     }
   };
 

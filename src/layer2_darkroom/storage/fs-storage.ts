@@ -3,8 +3,8 @@ import type {
   AlbumMeta,
   Artifact,
   ArtifactBundleMeta,
+  CommitLogEntry,
   CreateAlbumInput,
-  NegativeLedgerEntry,
   ProjectedIndexRecord,
 } from '@/types';
 import { generateAlbumId } from '@/utils/id';
@@ -437,12 +437,12 @@ export class GalleryStorage {
     const now = new Date().toISOString();
     const artifactId = `art_${Math.random().toString(16).slice(2, 10)}`;
 
-    const genesisHistory: NegativeLedgerEntry[] = [
+    const genesisHistory: CommitLogEntry[] = [
       {
         revision: 1,
         timestamp: now,
         action: 'genesis',
-        description: '初始版本',
+        message: '初始版本',
       },
     ];
 
@@ -453,7 +453,6 @@ export class GalleryStorage {
       filename,
       tags,
       description: description.trim() || undefined,
-      lastCommitMessage: '初始版本',
       currentRevision: 1,
       createdAt: now,
       updatedAt: now,
@@ -525,34 +524,105 @@ export class GalleryStorage {
   }
 
   /**
-   * 保存工件源码并记录沙盒内快照
+   * 原子化提交工件版本变更（对标 git commit，彻底终结多重写覆写 Bug）
    */
-  public async saveArtifactSource(
-    filename: string,
-    artifactId: string,
-    newContent: string,
-    revision: number,
-    action: 'genesis' | 'patch' | 'rollback' = 'patch',
-    description?: string,
-  ): Promise<void> {
-    if (!this.dirHandle) return;
+  public async commitRevision(params: {
+    artifactId: string;
+    filename: string;
+    code?: string;
+    revision: number;
+    action?: 'genesis' | 'patch' | 'rollback';
+    message: string;
+    tags?: string[];
+    description?: string;
+  }): Promise<ArtifactBundleMeta> {
+    const {
+      artifactId,
+      filename,
+      code,
+      revision,
+      action = 'patch',
+      message,
+      tags,
+      description,
+    } = params;
 
-    const pureContent = MetaSealEngine.strip(newContent);
-
-    // 1. 动态注水最新符印后写入根目录物理 HTML
+    const now = new Date().toISOString();
     const existingMeta = await this.loadBundleMeta(artifactId);
-    const metaToInject = existingMeta
-      ? { ...existingMeta, currentRevision: revision }
-      : { currentRevision: revision };
-    const stampedContent = MetaSealEngine.inject(pureContent, metaToInject);
 
-    const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(stampedContent);
-    await writable.close();
+    const baseMeta: ArtifactBundleMeta = existingMeta || {
+      schemaVersion: 2,
+      id: artifactId,
+      name: filename.replace(/\.html$/, ''),
+      filename,
+      tags: tags || ['形态:原生html'],
+      description,
+      currentRevision: revision,
+      createdAt: now,
+      updatedAt: now,
+      history: [],
+    };
 
-    // 2. 写入沙盒快照（底片库只封存纯净代码，杜绝符印行破坏版本差异）
-    await this.recordNegativeRevision(artifactId, revision, pureContent, action, description);
+    // 1. 更新提交历史记录链表
+    const commitHistory = (baseMeta.history || []).filter((h) => h.revision !== revision);
+    commitHistory.push({
+      revision,
+      timestamp: now,
+      action,
+      message: message.trim() || `版本快照 REV:${revision}`,
+    });
+    commitHistory.sort((a, b) => a.revision - b.revision);
+
+    const updatedMeta: ArtifactBundleMeta = {
+      ...baseMeta,
+      currentRevision: revision,
+      updatedAt: now,
+      history: commitHistory,
+      ...(tags ? { tags } : {}),
+      ...(description !== undefined ? { description } : {}),
+    };
+
+    if (this.dirHandle) {
+      const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
+      const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
+      const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
+
+      // 2. 若包含代码变动，写入纯净快照文件
+      if (code !== undefined) {
+        const pureCode = MetaSealEngine.strip(code);
+        const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
+        const snapFilename = `rev-${String(revision).padStart(4, '0')}.snapshot`;
+        const revHandle = await snapshotsDir.getFileHandle(snapFilename, { create: true });
+        const snapWritable = await revHandle.createWritable();
+        await snapWritable.write(pureCode);
+        await snapWritable.close();
+
+        // 3. 注入符印写入根目录 HTML
+        const stampedContent = MetaSealEngine.inject(pureCode, updatedMeta);
+        const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(stampedContent);
+        await writable.close();
+      }
+
+      // 4. 原子持久化 meta.json
+      const metaHandle = await bundleDir.getFileHandle(META_FILE, { create: true });
+      const metaWritable = await metaHandle.createWritable();
+      await metaWritable.write(JSON.stringify(updatedMeta, null, 2));
+      await metaWritable.close();
+
+      // 5. 更新 IndexedDB 投影
+      putCachedRecord({
+        id: updatedMeta.id,
+        filename: updatedMeta.filename,
+        htmlLastModified: 0,
+        bundleLastModified: new Date(now).getTime(),
+        meta: updatedMeta,
+        hasPoster: this.posterUrlMap.has(updatedMeta.id),
+      }).catch(() => {});
+    }
+
+    return updatedMeta;
   }
 
   /**
@@ -791,52 +861,23 @@ export class GalleryStorage {
   }
 
   /**
-   * 记录版本快照至沙盒内 snapshots/rev-XXXX.snapshot
+   * 确保工件初始创世快照存在
    */
   public async recordNegativeRevision(
     artifactId: string,
     revision: number,
     content: string,
     action: 'genesis' | 'patch' | 'rollback' = 'patch',
-    description?: string,
+    message?: string,
   ): Promise<void> {
-    if (!this.dirHandle) return;
-
-    const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
-    const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
-    const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
-    const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
-
-    // 1. 写入快照
-    const snapFilename = `rev-${String(revision).padStart(4, '0')}.snapshot`;
-    const revHandle = await snapshotsDir.getFileHandle(snapFilename, { create: true });
-    const writable = await revHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-
-    // 2. 同步更新沙盒内部历史修订台账
-    const bundleMeta = await this.loadBundleMeta(artifactId);
-    if (bundleMeta) {
-      const history = (bundleMeta.history || []).filter((item) => item.revision !== revision);
-      const commitDesc =
-        description || (action === 'genesis' ? '初始版本' : `版本快照 REV:${revision}`);
-
-      history.push({
-        revision,
-        timestamp: new Date().toISOString(),
-        action,
-        description: commitDesc,
-      });
-
-      history.sort((a, b) => a.revision - b.revision);
-
-      bundleMeta.history = history;
-      bundleMeta.currentRevision = revision;
-      bundleMeta.lastCommitMessage = commitDesc;
-      bundleMeta.updatedAt = new Date().toISOString();
-
-      await this.saveMeta(bundleMeta);
-    }
+    await this.commitRevision({
+      artifactId,
+      filename: '',
+      code: content,
+      revision,
+      action,
+      message: message || (action === 'genesis' ? '初始版本' : `版本快照 REV:${revision}`),
+    });
   }
 
   /**
@@ -862,14 +903,14 @@ export class GalleryStorage {
   /**
    * 从沙盒内 meta.json 极速读取历史修订列表
    */
-  public async listNegativeRevisions(artifactId: string): Promise<NegativeLedgerEntry[]> {
+  public async listNegativeRevisions(artifactId: string): Promise<CommitLogEntry[]> {
     if (!this.dirHandle) {
       return [
         {
           revision: 1,
           timestamp: new Date().toISOString(),
           action: 'genesis',
-          description: '示例版本',
+          message: '示例版本',
         },
       ];
     }
@@ -958,7 +999,7 @@ export class GalleryStorage {
               revision: 1,
               timestamp: '2025-02-28T12:00:00Z',
               action: 'genesis',
-              description: '初始版本',
+              message: '初始版本',
             },
           ],
         },

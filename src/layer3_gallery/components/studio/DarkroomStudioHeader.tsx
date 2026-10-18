@@ -1,5 +1,5 @@
 import type { AssetCacheStats } from '@/layer2_darkroom/engine/asset-cache';
-import type { Artifact, CaptureMode } from '@/types';
+import { type Artifact, type CaptureMode, getLastCommitMessage } from '@/types';
 import {
   ArrowLeft,
   Camera,
@@ -163,13 +163,13 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
             </span>
           )}
 
-          {artifact.meta.lastCommitMessage && viewingRevision === null && (
+          {viewingRevision === null && (
             <span
               className="hidden lg:flex items-center gap-1 text-[11px] text-zinc-400 bg-background px-2 py-0.5 rounded border border-border max-w-[240px] truncate"
-              title={`当前版本 Commit: ${artifact.meta.lastCommitMessage}`}
+              title={`当前版本 Commit: ${getLastCommitMessage(artifact.meta)}`}
             >
-              <GitCommit className="w-3 h-3 text-status-success shrink-0" />
-              <span className="truncate">{artifact.meta.lastCommitMessage}</span>
+              <GitCommit className="w-3.5 h-3.5 text-status-success shrink-0" />
+              <span className="truncate">{getLastCommitMessage(artifact.meta)}</span>
             </span>
           )}
 

@@ -4,7 +4,7 @@ import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/layer2_darkroom/engine/title-sanitizer';
 import { galleryStorage } from '@/layer2_darkroom/storage/fs-storage';
 import { TagAutocompleteInput } from '@/layer3_gallery/components/TagAutocompleteInput';
-import type { Artifact, NegativeLedgerEntry } from '@/types';
+import { type Artifact, type CommitLogEntry, getLastCommitMessage } from '@/types';
 import {
   Calendar,
   Check,
@@ -77,7 +77,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [isSavingDesc, setIsSavingDesc] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
-  const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
+  const [historyLedger, setHistoryLedger] = useState<CommitLogEntry[]>([]);
 
   // 当切换工件时重置状态
   useEffect(() => {
@@ -436,9 +436,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           </div>
 
           <div className="text-xs font-sans text-main leading-relaxed bg-surface-subtle p-2.5 rounded border border-border whitespace-pre-wrap select-text">
-            {artifact.meta.lastCommitMessage ||
-              historyLedger[0]?.description ||
-              '初始版本 (Genesis Snapshot)'}
+            {getLastCommitMessage(artifact.meta)}
           </div>
         </div>
 

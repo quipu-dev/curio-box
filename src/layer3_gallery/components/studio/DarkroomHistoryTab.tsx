@@ -1,11 +1,11 @@
-import type { NegativeLedgerEntry } from '@/types';
+import type { CommitLogEntry } from '@/types';
 import { Eye, GitCommit, Undo2 } from 'lucide-react';
 import type React from 'react';
 
 interface DarkroomHistoryTabProps {
   currentRevision: number;
   lastUpdatedAt: string;
-  historyLedger: NegativeLedgerEntry[];
+  historyLedger: CommitLogEntry[];
   viewingRevision: number | null;
   onCheckoutRevision: (rev: number) => void;
   onRestoreRevision: (rev: number) => void;
@@ -117,7 +117,7 @@ export const DarkroomHistoryTab: React.FC<DarkroomHistoryTabProps> = ({
                   <div className="flex items-start gap-1 text-main leading-relaxed select-text">
                     <GitCommit className="w-3.5 h-3.5 text-status-info shrink-0 mt-0.5" />
                     <span className="break-words font-medium">
-                      {item.description || (item.action === 'genesis' ? '初始版本' : '无详细说明')}
+                      {item.message || (item.action === 'genesis' ? '初始版本' : '无详细说明')}
                     </span>
                   </div>
                   <div className="text-[10px] font-mono text-muted pl-4.5">

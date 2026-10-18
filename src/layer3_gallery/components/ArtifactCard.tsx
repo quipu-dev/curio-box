@@ -1,5 +1,5 @@
 import { TagQueryEngine } from '@/layer2_darkroom/engine/tag-engine';
-import type { Artifact } from '@/types';
+import { type Artifact, getLastCommitMessage } from '@/types';
 import { Code2, FileText, GitCommit, MessageSquareQuote, Play, Star } from 'lucide-react';
 import type React from 'react';
 
@@ -92,9 +92,9 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           >
             {artifact.meta.name}
           </span>
-          {artifact.meta.lastCommitMessage && (
+          {getLastCommitMessage(artifact.meta) && (
             <span
-              title={`最新提交: ${artifact.meta.lastCommitMessage}`}
+              title={`最新提交: ${getLastCommitMessage(artifact.meta)}`}
               className="shrink-0 flex items-center text-status-success"
             >
               <GitCommit className="w-3 h-3" />
@@ -154,14 +154,14 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
             </div>
 
             {/* 最新 Commit 提交内容直接展示 */}
-            {artifact.meta.lastCommitMessage && (
+            {getLastCommitMessage(artifact.meta) && (
               <div
                 className="flex items-start gap-1.5 bg-background/80 border border-status-success-border px-2 py-1 rounded text-[11px] font-sans text-zinc-300"
-                title={`最新提交说明: ${artifact.meta.lastCommitMessage}`}
+                title={`最新提交说明: ${getLastCommitMessage(artifact.meta)}`}
               >
                 <GitCommit className="w-3.5 h-3.5 text-status-success shrink-0 mt-0.5" />
                 <span className="line-clamp-2 leading-relaxed">
-                  {artifact.meta.lastCommitMessage}
+                  {getLastCommitMessage(artifact.meta)}
                 </span>
               </div>
             )}

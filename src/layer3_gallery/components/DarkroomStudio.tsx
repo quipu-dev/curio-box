@@ -12,7 +12,7 @@ import { DarkroomHistoryTab } from '@/layer3_gallery/components/studio/DarkroomH
 import { DarkroomPatchTab } from '@/layer3_gallery/components/studio/DarkroomPatchTab';
 import { DarkroomStudioHeader } from '@/layer3_gallery/components/studio/DarkroomStudioHeader';
 import type { CaptureMode } from '@/types';
-import type { Artifact, NegativeLedgerEntry } from '@/types';
+import type { Artifact, CommitLogEntry } from '@/types';
 import { Code2, Database, History } from 'lucide-react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -51,7 +51,7 @@ export const DarkroomStudio: React.FC<DarkroomStudioProps> = ({
   const [patchInput, setPatchInput] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [assetStats, setAssetStats] = useState<AssetCacheStats | null>(null);
-  const [historyLedger, setHistoryLedger] = useState<NegativeLedgerEntry[]>([]);
+  const [historyLedger, setHistoryLedger] = useState<CommitLogEntry[]>([]);
 
   // 预演与审核状态
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
@@ -302,47 +302,25 @@ ${MetaSealEngine.strip(loadedSourceCode)}
           pendingSimulation.nextCommitMessage ||
           (hasCodeChange ? '应用审核通过的补丁' : '更新工件元数据');
 
-        if (hasCodeChange) {
-          await galleryStorage.saveArtifactSource(
-            artifact.meta.filename,
-            artifact.meta.id,
-            nextCode,
-            nextRev,
-            'patch',
-            commitDescription,
-          );
-        } else if (
-          pendingSimulation.hasTagChange ||
-          pendingSimulation.hasDescChange ||
-          pendingSimulation.hasCommitChange
-        ) {
-          // 代码未变但单独提交了 commit 日志或元数据时，记录一次修订台账记录
-          await galleryStorage.recordNegativeRevision(
-            artifact.meta.id,
-            nextRev,
-            baseCode,
-            'patch',
-            commitDescription,
-          );
-        }
+        const updatedMeta = await galleryStorage.commitRevision({
+          artifactId: artifact.meta.id,
+          filename: artifact.meta.filename,
+          code: hasCodeChange ? nextCode : undefined,
+          revision: nextRev,
+          action: 'patch',
+          message: commitDescription,
+          tags: pendingSimulation.hasTagChange ? nextTags : undefined,
+          description: pendingSimulation.hasDescChange ? nextDesc : undefined,
+        });
 
-        const updatedMeta = {
-          ...artifact.meta,
-          tags: nextTags,
-          description: nextDesc,
-          lastCommitMessage: commitDescription,
-          currentRevision: nextRev,
-          updatedAt: new Date().toISOString(),
-        };
-        await galleryStorage.saveMeta(updatedMeta);
-
+        const finalCode = hasCodeChange ? nextCode : baseCode;
         const updated: Artifact = {
           ...artifact,
-          sourceCode: nextCode,
+          sourceCode: finalCode,
           meta: updatedMeta,
         };
 
-        setLoadedSourceCode(nextCode);
+        setLoadedSourceCode(finalCode);
         onUpdateArtifact(updated);
         setPendingSimulation(null);
         setPatchInput('');
@@ -376,21 +354,14 @@ ${MetaSealEngine.strip(loadedSourceCode)}
     }
 
     const nextRev = artifact.meta.currentRevision + 1;
-    await galleryStorage.saveArtifactSource(
-      artifact.meta.filename,
-      artifact.meta.id,
-      historicalContent,
-      nextRev,
-      'rollback',
-      `还原自版本 REV:${targetRev}`,
-    );
-
-    const updatedMeta = {
-      ...artifact.meta,
-      currentRevision: nextRev,
-      updatedAt: new Date().toISOString(),
-    };
-    await galleryStorage.saveMeta(updatedMeta);
+    const updatedMeta = await galleryStorage.commitRevision({
+      artifactId: artifact.meta.id,
+      filename: artifact.meta.filename,
+      code: historicalContent,
+      revision: nextRev,
+      action: 'rollback',
+      message: `还原自版本 REV:${targetRev}`,
+    });
 
     const updated: Artifact = {
       ...artifact,
@@ -398,6 +369,7 @@ ${MetaSealEngine.strip(loadedSourceCode)}
       meta: updatedMeta,
     };
 
+    setLoadedSourceCode(historicalContent);
     onUpdateArtifact(updated);
     setViewingSnapshot(null);
     toast.success(`已恢复 REV:${targetRev} 内容为新版本 REV:${nextRev}`);

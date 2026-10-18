@@ -80,14 +80,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {toasts.map((item) => (
           <div
             key={item.id}
-            className={`pointer-events-auto flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-lg border shadow-xl text-xs font-mono transition-all animate-in fade-in slide-in-from-bottom-2 ${
+            className={`pointer-events-auto flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-lg border shadow-xl text-xs font-mono transition-all animate-in fade-in slide-in-from-bottom-2 bg-surface ${
               item.type === 'success'
-                ? 'bg-surface/95 border-status-success-border text-status-success'
+                ? 'border-status-success-border text-status-success'
                 : item.type === 'error'
-                  ? 'bg-surface/95 border-status-error-border text-status-error'
+                  ? 'border-status-error-border text-status-error'
                   : item.type === 'warn'
-                    ? 'bg-surface/95 border-status-warn-border text-status-warn'
-                    : 'bg-surface/95 border-border text-main'
+                    ? 'border-status-warn-border text-status-warn'
+                    : 'border-border text-main'
             }`}
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">

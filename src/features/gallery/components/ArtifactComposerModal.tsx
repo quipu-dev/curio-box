@@ -2,6 +2,9 @@ import { TagAutocompleteInput } from '@/components/common/TagAutocompleteInput';
 import { MetaSealEngine } from '@/core/engine/meta-seal';
 import { TitleSanitizerEngine } from '@/core/engine/title-sanitizer';
 import { SandboxViewport } from '@/features/sandbox/SandboxViewport';
+import { html } from '@codemirror/lang-html';
+import { oneDark } from '@codemirror/theme-one-dark';
+import CodeMirror from '@uiw/react-codemirror';
 import {
   Code2,
   Eye,
@@ -14,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface ArtifactComposerModalProps {
   initialCode: string;
@@ -55,33 +58,15 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // 支持 Tab 键缩进 2 空格
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const nextCode = `${sourceCode.substring(0, start)}  ${sourceCode.substring(end)}`;
-      setSourceCode(nextCode);
-
-      requestAnimationFrame(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + 2;
-      });
-    }
-
-    // Ctrl+S 或 Cmd+S 触发保存
+  // 支持 Ctrl+S 或 Cmd+S 快捷键保存
+  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       handlePerformSave();
     }
   };
 
-  // 代码行数统计与行号映射
+  // 代码行数统计
   const lineCount = useMemo(() => {
     return sourceCode.split('\n').length;
   }, [sourceCode]);
@@ -245,38 +230,42 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
         {/* 主编辑与预览区域 */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* 左侧代码编辑区 */}
-          <div className="flex-1 flex flex-col bg-code text-main overflow-hidden border-b md:border-b-0 md:border-r border-border">
+          <div
+            className="dark-scope flex-1 flex flex-col bg-code text-main overflow-hidden border-b md:border-b-0 md:border-r border-border"
+            onKeyDown={handleEditorKeyDown}
+          >
             <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex justify-between items-center text-[11px] font-mono text-zinc-400 shrink-0">
               <span className="flex items-center gap-1.5">
                 <Code2 className="w-3.5 h-3.5 text-status-info" />
                 <span>HTML / WebGL / Canvas 单文件源码</span>
               </span>
               <span>
-                {lineCount} 行 · {sourceCode.length} 字符 · 支持 Tab 缩进
+                {lineCount} 行 · {sourceCode.length} 字符 · 智能高亮
               </span>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-              {/* 行号槽 */}
-              <div
-                className="w-12 bg-zinc-950/60 border-r border-zinc-800/80 py-3 text-right pr-2.5 text-zinc-600 font-mono text-[11px] select-none overflow-hidden leading-relaxed"
-                aria-hidden="true"
-              >
-                {Array.from({ length: Math.min(lineCount, 500) }).map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 行号渲染静态索引
-                  <div key={i}>{i + 1}</div>
-                ))}
-              </div>
-
-              {/* 源码文本域 */}
-              <textarea
-                ref={textareaRef}
+            <div className="flex-1 overflow-hidden [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto">
+              <CodeMirror
                 value={sourceCode}
-                onChange={(e) => setSourceCode(e.target.value)}
-                onKeyDown={handleKeyDown}
-                spellCheck={false}
+                height="100%"
+                theme={oneDark}
+                extensions={[html()]}
+                onChange={(val) => setSourceCode(val)}
                 placeholder="在此粘贴或编写工件 HTML 完整代码..."
-                className="flex-1 bg-transparent p-3 font-mono text-xs text-main outline-none resize-none leading-relaxed overflow-y-auto selection:bg-sky-500/30"
+                className="h-full text-xs font-mono"
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  dropCursor: true,
+                  allowMultipleSelections: false,
+                  indentOnInput: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
+                  autocompletion: false,
+                  highlightActiveLine: true,
+                  highlightSelectionMatches: true,
+                  tabSize: 2,
+                }}
               />
             </div>
           </div>

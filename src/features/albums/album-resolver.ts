@@ -23,9 +23,13 @@ export function resolveAlbumArtifacts(album: AlbumMeta, allArtifacts: Artifact[]
     return resolved;
   }
 
-  // 智能画册基于 Tag Query 进行过滤
+  // 智能画册基于 Tag Query 进行过滤 (支持 Glob、OR 联合与属性断言)
   const matched = allArtifacts.filter((item) => {
-    return TagQueryEngine.match(item.meta.tags, album.query || '');
+    return TagQueryEngine.match(item.meta.tags, album.query || '', {
+      rating: item.meta.rating,
+      currentRevision: item.meta.currentRevision,
+      hasPoster: Boolean(item.posterBlobUrl),
+    });
   });
 
   return sortArtifacts(matched, album.sortBy || 'rating-desc');

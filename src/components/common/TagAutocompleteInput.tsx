@@ -23,6 +23,7 @@ interface TagAutocompleteInputProps {
   placeholder?: string;
   className?: string;
   id?: string;
+  allowPredicates?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   onSelectTag?: (tag: string) => void;
 }
@@ -34,6 +35,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
   placeholder,
   className,
   id,
+  allowPredicates = false,
   onKeyDown,
   onSelectTag,
 }) => {
@@ -48,12 +50,12 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
   const updateSuggestions = useCallback(
     (currentVal: string, cursorIndex: number) => {
       const tokenInfo = TagQueryEngine.extractCursorToken(currentVal, cursorIndex);
-      const list = TagQueryEngine.getSuggestions(allTags, tokenInfo);
+      const list = TagQueryEngine.getSuggestions(allTags, tokenInfo, { allowPredicates });
       setSuggestions(list);
       setActiveIndex(null);
       return list;
     },
-    [allTags],
+    [allTags, allowPredicates],
   );
 
   const { refs, floatingStyles, context } = useFloating({

@@ -103,8 +103,12 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
         return false;
       }
 
-      // 标签精准与排除过滤
-      const tagMatched = TagQueryEngine.match(item.meta.tags, searchQuery);
+      // 标签与高级断言过滤 (支持 Glob、OR 联合与属性断言)
+      const tagMatched = TagQueryEngine.match(item.meta.tags, searchQuery, {
+        rating: item.meta.rating,
+        currentRevision: item.meta.currentRevision,
+        hasPoster: Boolean(item.posterBlobUrl),
+      });
       if (tagMatched) return true;
 
       // 综合描述与名称检索兜底

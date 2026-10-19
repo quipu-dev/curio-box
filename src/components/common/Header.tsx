@@ -131,6 +131,7 @@ export const Header: React.FC<HeaderProps> = ({
             value={searchQuery}
             onChange={onSearchChange}
             allTags={allTags || []}
+            allowPredicates={true}
             placeholder={
               currentView === 'albums'
                 ? '按标题、简介或智能标签检索画册...'

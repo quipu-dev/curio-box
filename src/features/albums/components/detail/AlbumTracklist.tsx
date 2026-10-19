@@ -50,7 +50,13 @@ export const AlbumTracklist: React.FC<AlbumTracklistProps> = ({
       </div>
 
       {artifacts.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 280px))',
+            gap: '20px',
+          }}
+        >
           {artifacts.map((art, idx) => {
             const isCover = album.type === 'manual' && album.customCoverArtifactId === art.meta.id;
 

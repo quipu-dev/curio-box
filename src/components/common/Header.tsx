@@ -1,32 +1,37 @@
 import { TagAutocompleteInput } from '@/components/common/TagAutocompleteInput';
+import { useSettings } from '@/context/SettingsContext';
 import {
   BookOpen,
   ChevronDown,
   Clipboard,
-  FolderOpen,
+  FileCode,
   LayoutGrid,
   Moon,
   Plus,
   Search,
+  Settings,
   Sun,
 } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
+
+import { FolderOpen, FolderSync } from 'lucide-react';
 
 interface HeaderProps {
   currentView: 'specimens' | 'albums';
   onSwitchView: (view: 'specimens' | 'albums') => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  onPickDirectory: () => void;
   onImportFromClipboard: () => void;
   onOpenNewArtifactComposer: () => void;
   onOpenNewAlbumComposer?: () => void;
   hasDirectory: boolean;
   pendingDirectoryName?: string;
+  onPickDirectory: () => void;
   onRequestPendingPermission?: () => void;
   resolvedTheme: 'dark' | 'light';
   onToggleTheme: () => void;
+  onOpenSettings: () => void;
   allTags?: string[];
 }
 
@@ -35,19 +40,23 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchView,
   searchQuery,
   onSearchChange,
-  onPickDirectory,
   onImportFromClipboard,
   onOpenNewArtifactComposer,
   onOpenNewAlbumComposer,
   hasDirectory,
   pendingDirectoryName,
+  onPickDirectory,
   onRequestPendingPermission,
   resolvedTheme,
   onToggleTheme,
+  onOpenSettings,
   allTags,
 }) => {
+  const { settings } = useSettings();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isDefaultClipboard = settings.defaultCreationMode === 'clipboard';
 
   // 绑定全局 ⌘K / Ctrl+K 聚焦搜索框
   useEffect(() => {
@@ -75,14 +84,6 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isCreateMenuOpen]);
-
-  const handleDirectoryAction = () => {
-    if (pendingDirectoryName && !hasDirectory && onRequestPendingPermission) {
-      onRequestPendingPermission();
-    } else {
-      onPickDirectory();
-    }
-  };
 
   return (
     <header className="h-14 border-b border-border bg-surface px-5 flex items-center justify-between shrink-0 gap-4 z-20">
@@ -124,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* 居中聚合搜索框 */}
       <div className="flex-1 max-w-lg mx-2">
         <div className="relative flex items-center">
-          <Search className="w-4 h-4 text-muted absolute left-3 pointer-events-none" />
+          <Search className="w-4 h-4 text-muted absolute left-3 pointer-events-none z-10" />
           <TagAutocompleteInput
             id="global-search-input"
             value={searchQuery}
@@ -137,7 +138,7 @@ export const Header: React.FC<HeaderProps> = ({
             }
             className="w-full bg-background border border-border rounded-lg pl-9 pr-16 py-1.5 text-xs text-main placeholder:text-muted focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/50 transition-all font-mono"
           />
-          <div className="absolute right-2.5 flex items-center pointer-events-none">
+          <div className="absolute right-2.5 flex items-center pointer-events-none z-10">
             <span className="text-[10px] text-muted font-mono bg-surface-subtle px-1.5 py-0.5 rounded border border-border">
               ⌘K
             </span>
@@ -147,65 +148,74 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* 右侧操作簇 */}
       <div className="flex items-center gap-3">
-        {/* 本地物理工作区目录胶囊 */}
-        <button
-          type="button"
-          onClick={handleDirectoryAction}
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-surface-subtle hover:bg-surface-elevated text-xs transition-colors cursor-pointer"
-          title={
-            pendingDirectoryName && !hasDirectory
-              ? `点击恢复访问授权: ${pendingDirectoryName}`
-              : hasDirectory
-                ? '已连接物理工作区，点击切换'
-                : '点击关联本地工作区目录'
-          }
-        >
-          <FolderOpen
-            className={`w-3.5 h-3.5 ${
-              pendingDirectoryName && !hasDirectory
-                ? 'text-status-warn'
-                : hasDirectory
-                  ? 'text-status-success'
-                  : 'text-muted'
-            }`}
-          />
-          <span className="text-main font-mono text-[11px] truncate max-w-[150px]">
-            {pendingDirectoryName && !hasDirectory
-              ? `待授权: ${pendingDirectoryName}`
-              : hasDirectory
-                ? '物理工作区已关联'
-                : '关联本地目录'}
-          </span>
-        </button>
+        {/* 预览模式下的直观连接工作区入口（已连接后自动隐退，仅收于设置中） */}
+        {!hasDirectory &&
+          (pendingDirectoryName && onRequestPendingPermission ? (
+            <button
+              type="button"
+              onClick={onRequestPendingPermission}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-warn-border bg-status-warn-bg text-status-warn hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0"
+              title={`恢复对本地目录 [${pendingDirectoryName}] 的访问授权`}
+            >
+              <FolderSync className="w-3.5 h-3.5 animate-pulse" />
+              <span className="font-sans font-bold">恢复工作区授权</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onPickDirectory}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-info-border bg-status-info-bg text-status-info hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0 shadow-sm"
+              title="连接本地文件夹，实现工件与快照的本地实时物理落盘"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span className="font-sans font-bold">连接工作区</span>
+            </button>
+          ))}
 
-        {/* 组合导入与创建主按钮（统一胶囊容器彻底杜绝断开） */}
+        {/* 组合导入与创建主按钮（深色模式适配，依据首选项切换主动作） */}
         {currentView === 'albums' ? (
           <button
             type="button"
             onClick={onOpenNewAlbumComposer}
-            className="bg-zinc-100 hover:bg-white text-black font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
+            className="bg-surface-elevated hover:bg-surface-subtle border border-border text-main font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
             title="新建策展画册"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5 text-status-info" />
             <span>新建画册</span>
           </button>
         ) : (
           <div ref={dropdownRef} className="relative flex items-center rounded-lg shadow-sm">
-            <div className="flex items-center bg-zinc-100 hover:bg-white text-black rounded-lg overflow-hidden border border-zinc-200 transition-colors">
-              <button
-                type="button"
-                onClick={onImportFromClipboard}
-                className="font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer outline-none transition-colors hover:bg-black/5"
-                title="直接从剪贴板读取 HTML 或脚本并导入"
-              >
-                <Clipboard className="w-3.5 h-3.5 text-sky-600" />
-                <span className="text-zinc-900 font-bold">剪贴板导入</span>
-              </button>
-              <div className="w-[1px] h-3.5 bg-zinc-300 shrink-0" />
+            <div className="flex items-center bg-surface-elevated hover:bg-surface border border-border rounded-lg overflow-hidden transition-colors">
+              {isDefaultClipboard ? (
+                /* 默认模式：剪贴板导入 */
+                <button
+                  type="button"
+                  onClick={onImportFromClipboard}
+                  className="font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer outline-none transition-colors text-main hover:bg-surface-subtle"
+                  title="直接从剪贴板读取 HTML 或脚本并导入"
+                >
+                  <Clipboard className="w-3.5 h-3.5 text-status-info" />
+                  <span>剪贴板导入</span>
+                </button>
+              ) : (
+                /* 默认模式：新建空白工件 */
+                <button
+                  type="button"
+                  onClick={onOpenNewArtifactComposer}
+                  className="font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer outline-none transition-colors text-main hover:bg-surface-subtle"
+                  title="开启空白工件编辑器"
+                >
+                  <Plus className="w-3.5 h-3.5 text-status-success" />
+                  <span>新建工件</span>
+                </button>
+              )}
+
+              <div className="w-px h-3.5 bg-border shrink-0" />
+
               <button
                 type="button"
                 onClick={() => setIsCreateMenuOpen((prev) => !prev)}
-                className="px-1.5 py-1.5 cursor-pointer outline-none text-zinc-700 hover:text-black hover:bg-black/5 transition-colors flex items-center justify-center"
+                className="px-1.5 py-1.5 cursor-pointer outline-none text-muted hover:text-main hover:bg-surface-subtle transition-colors flex items-center justify-center"
                 title="展开更多创建模式"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -222,7 +232,7 @@ export const Header: React.FC<HeaderProps> = ({
                   }}
                   className="w-full text-left px-2.5 py-1.5 rounded hover:bg-surface-subtle text-main flex items-center gap-2"
                 >
-                  <Plus className="w-3.5 h-3.5 text-status-success" />
+                  <FileCode className="w-3.5 h-3.5 text-status-success" />
                   <span>新建空白工件</span>
                 </button>
                 <button
@@ -253,6 +263,16 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <Moon className="w-4 h-4 text-sky-600" />
           )}
+        </button>
+
+        {/* 系统全局首选项设置入口 */}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="p-2 border border-border text-muted hover:text-main hover:bg-surface-elevated rounded-lg transition-colors"
+          title="系统首选项设置（物理工作区、创建偏好与分组）"
+        >
+          <Settings className="w-4 h-4" />
         </button>
       </div>
     </header>

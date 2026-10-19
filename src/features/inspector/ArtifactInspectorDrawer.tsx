@@ -145,29 +145,34 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     }
   };
 
-  // 添加标签
-  const handleAddTag = async () => {
-    const trimmed = newTagInput.trim();
+  // 添加单个或多个标签（选定即存）
+  const handleSelectTag = async (tag: string) => {
+    const trimmed = tag.trim().replace(/^[-+]/, '');
     if (!trimmed) return;
 
     const tokens = trimmed.split(/\s+/).filter(Boolean);
     const existingSet = new Set(artifact.meta.tags);
-    let addedCount = 0;
+    const addedList: string[] = [];
 
     for (const token of tokens) {
       if (!existingSet.has(token)) {
         existingSet.add(token);
-        addedCount++;
+        addedList.push(token);
       }
     }
 
-    if (addedCount > 0) {
+    if (addedList.length > 0) {
       const nextTags = Array.from(existingSet);
       setNewTagInput('');
       await onUpdateTags(artifact.meta.filename, nextTags);
-      toast.success(`已追加 ${addedCount} 个新标签`);
+      toast.success(
+        addedList.length === 1
+          ? `已添加标签: ${addedList[0]}`
+          : `已追加 ${addedList.length} 个新标签`,
+      );
     } else {
       setNewTagInput('');
+      toast.info(`标签 [${trimmed}] 已存在`);
     }
   };
 
@@ -229,7 +234,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   return (
     <aside
       aria-label="工件档案信息栏"
-      className="fixed top-0 right-0 h-full w-full sm:w-[420px] z-30 bg-surface border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-200 select-none font-mono"
+      className="fixed top-0 right-0 h-full w-full sm:w-[420px] z-30 bg-surface border-l border-border shadow-2xl flex flex-col overflow-hidden text-main select-none font-mono"
     >
       {/* 档案顶部导航栏 */}
       <header className="h-14 border-b border-border px-5 flex items-center justify-between gap-3 shrink-0">
@@ -401,14 +406,9 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           <TagAutocompleteInput
             value={newTagInput}
             onChange={setNewTagInput}
+            onSelectTag={handleSelectTag}
             allTags={allTags}
-            placeholder="+ 追加标签 (回车上屏，支持命名空间:...)"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAddTag();
-              }
-            }}
+            placeholder="+ 添加标签 (选择或回车直接保存)"
             className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-xs text-main placeholder:text-muted outline-none focus:border-status-info font-mono"
           />
         </div>

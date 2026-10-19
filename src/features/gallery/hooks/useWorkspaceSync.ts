@@ -15,6 +15,13 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
+  const currentDirectoryName = useMemo(() => {
+    if (hasDirectory) {
+      return galleryStorage.getDirectoryHandle()?.name || null;
+    }
+    return null;
+  }, [hasDirectory]);
+
   /**
    * SWR 两段式工作区对齐
    */
@@ -263,6 +270,7 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     artifacts,
     albums,
     hasDirectory,
+    currentDirectoryName,
     pendingHandle,
     activeAlbumMeta,
     activeAlbumArtifacts,

@@ -1,5 +1,11 @@
+import { useSettings } from '@/context/SettingsContext';
 import { TagQueryEngine } from '@/core/engine/tag-engine';
 import type { Artifact } from '@/types';
+import {
+  getArtifactDayKey,
+  getArtifactFirstLetterKey,
+  getArtifactRatingKey,
+} from '@/utils/grouping';
 import { useMemo, useState } from 'react';
 
 export type SortOption = 'date-desc' | 'date-asc' | 'updated-desc' | 'rating-desc' | 'name-asc';
@@ -7,33 +13,13 @@ export type CardSize = 'sm' | 'md' | 'lg';
 
 export interface DisplayGroup {
   key: string;
-  icon: 'calendar' | 'clock' | 'star' | 'list';
+  icon: 'calendar' | 'clock' | 'star' | 'type' | 'list';
+  badge?: string;
   items: Artifact[];
 }
 
-export function formatTimelineGroupKey(dateString: string): string {
-  try {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return '更早归档';
-    const year = d.getFullYear();
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
-    return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-  } catch {
-    return '更早归档';
-  }
-}
-
-export function formatRatingGroupKey(rating?: number): string {
-  if (!rating || rating <= 0) return '未评分工件';
-  return `${rating} 星精选`;
-}
-
 /**
- * 判定工件是否处于未分类状态：
- * 1. 没有任何标签
- * 2. 显式带有包含“未分类”的标签
- * 3. 仅保留系统默认形态/新建占位标签，尚未添加具体领域或业务标签
+ * 判定工件是否处于未分类状态
  */
 export function isArtifactUnclassified(tags: string[]): boolean {
   if (tags.length === 0) return true;
@@ -42,7 +28,10 @@ export function isArtifactUnclassified(tags: string[]): boolean {
 }
 
 export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: string) {
-  // 排序方式
+  const { settings } = useSettings();
+  const { enableGrouping } = settings;
+
+  // 排序方式持久化
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     if (typeof window === 'undefined') return 'date-desc';
     const saved = localStorage.getItem('curio_sort_by');
@@ -56,7 +45,7 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     } catch {}
   };
 
-  // 卡片尺寸模式：sm (紧凑: 210px) / md (标准: 280px) / lg (巨幕: 380px)
+  // 卡片尺寸模式
   const [cardSize, setCardSize] = useState<CardSize>(() => {
     if (typeof window === 'undefined') return 'md';
     const saved = localStorage.getItem('curio_card_size');
@@ -71,14 +60,12 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     } catch {}
   };
 
-  // 待定格（缺失封面）过滤状态
+  // 快捷过滤器状态
   const [filterNeedsPoster, setFilterNeedsPoster] = useState<boolean>(false);
-  // 未分类（待归档打标）过滤状态
   const [filterUnclassified, setFilterUnclassified] = useState<boolean>(false);
-  // 高分标本（>=4星）过滤状态
   const [filterHighScore, setFilterHighScore] = useState<boolean>(false);
 
-  // 统计当前全局缺失海报封面的工件数
+  // 统计指标
   const needsPosterCount = useMemo(() => {
     let count = 0;
     for (const a of artifacts) {
@@ -87,7 +74,6 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return count;
   }, [artifacts]);
 
-  // 统计当前全局未分类的工件数
   const unclassifiedCount = useMemo(() => {
     let count = 0;
     for (const a of artifacts) {
@@ -96,7 +82,6 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return count;
   }, [artifacts]);
 
-  // 统计高分工件数 (>=4星)
   const highScoreCount = useMemo(() => {
     let count = 0;
     for (const a of artifacts) {
@@ -105,7 +90,7 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return count;
   }, [artifacts]);
 
-  // 1. 过滤匹配（同时支持标签搜索、名称/描述全文检索、快捷胶囊状态筛选叠加）
+  // 1. 过滤匹配
   const filteredArtifacts = useMemo(() => {
     return artifacts.filter((item) => {
       if (filterNeedsPoster && item.posterBlobUrl) {
@@ -132,11 +117,10 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     });
   }, [artifacts, searchQuery, filterNeedsPoster, filterUnclassified, filterHighScore]);
 
-  // 2. 依据当前排序选项进行确定性排序
+  // 2. 排序运算
   const sortedArtifacts = useMemo(() => {
     const list = [...filteredArtifacts];
     list.sort((a, b) => {
-      // 评分优先
       if (sortBy === 'rating-desc') {
         const ratingA = a.meta.rating || 0;
         const ratingB = b.meta.rating || 0;
@@ -148,26 +132,23 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
         return timeB - timeA;
       }
 
-      // 最近修改优先 (updatedAt)
       if (sortBy === 'updated-desc') {
         const timeA = new Date(a.meta.updatedAt).getTime() || 0;
         const timeB = new Date(b.meta.updatedAt).getTime() || 0;
         return timeB - timeA;
       }
 
-      // 最早导入优先 (createdAt)
       if (sortBy === 'date-asc') {
         const timeA = new Date(a.meta.createdAt).getTime() || 0;
         const timeB = new Date(b.meta.createdAt).getTime() || 0;
         return timeA - timeB;
       }
 
-      // 名称字典序
       if (sortBy === 'name-asc') {
         return a.meta.name.localeCompare(b.meta.name, 'zh-CN');
       }
 
-      // 默认 date-desc: 最新导入优先 (createdAt)
+      // 默认 date-desc: 最新导入优先
       const timeA = new Date(a.meta.createdAt).getTime() || 0;
       const timeB = new Date(b.meta.createdAt).getTime() || 0;
       return timeB - timeA;
@@ -175,64 +156,102 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     return list;
   }, [filteredArtifacts, sortBy]);
 
-  // 3. 动态聚合分桶
+  // 3. 根据用户选中的 sortBy 自动感知并派发分组策略
   const displayGroups = useMemo(() => {
+    if (!enableGrouping) {
+      return [];
+    }
+
     const groups: DisplayGroup[] = [];
     const groupMap = new Map<string, Artifact[]>();
 
+    // 场景 A：评分排序 -> 自动按星级分组
     if (sortBy === 'rating-desc') {
       for (const art of sortedArtifacts) {
-        const key = formatRatingGroupKey(art.meta.rating);
+        const key = getArtifactRatingKey(art.meta.rating);
         let list = groupMap.get(key);
         if (!list) {
           list = [];
           groupMap.set(key, list);
-          groups.push({ key, icon: 'star', items: list });
+          groups.push({
+            key,
+            icon: 'star',
+            items: list,
+          });
         }
         list.push(art);
       }
+
+      const ratingWeight = (key: string) => {
+        if (key.includes('5')) return 5;
+        if (key.includes('4')) return 4;
+        if (key.includes('3')) return 3;
+        if (key.includes('2')) return 2;
+        if (key.includes('1')) return 1;
+        return 0;
+      };
+      groups.sort((a, b) => ratingWeight(b.key) - ratingWeight(a.key));
       return groups;
     }
 
+    // 场景 B：名称排序 -> 自动按首字（拼音首字母/字符）分组
     if (sortBy === 'name-asc') {
-      return [{ key: '所有工件 (名称排序)', icon: 'list', items: sortedArtifacts }];
-    }
-
-    if (sortBy === 'updated-desc') {
       for (const art of sortedArtifacts) {
-        const key = formatTimelineGroupKey(art.meta.updatedAt);
+        const key = getArtifactFirstLetterKey(art.meta.name);
         let list = groupMap.get(key);
         if (!list) {
           list = [];
           groupMap.set(key, list);
-          groups.push({ key, icon: 'clock', items: list });
+          groups.push({
+            key,
+            icon: 'type',
+            items: list,
+          });
         }
         list.push(art);
       }
+
+      // A-Z -> 0-9 -> #
+      groups.sort((a, b) => {
+        if (a.key === '#') return 1;
+        if (b.key === '#') return -1;
+        return a.key.localeCompare(b.key);
+      });
       return groups;
     }
 
+    // 场景 C：时间排序 (date-desc / date-asc / updated-desc) -> 自动按精确到日分组
+    const useUpdated = sortBy === 'updated-desc';
     for (const art of sortedArtifacts) {
-      const key = formatTimelineGroupKey(art.meta.createdAt);
+      const key = getArtifactDayKey(art, useUpdated);
       let list = groupMap.get(key);
       if (!list) {
         list = [];
         groupMap.set(key, list);
-        groups.push({ key, icon: 'calendar', items: list });
+        groups.push({
+          key,
+          icon: useUpdated ? 'clock' : 'calendar',
+          items: list,
+        });
       }
       list.push(art);
     }
 
-    return groups;
-  }, [sortedArtifacts, sortBy]);
+    if (sortBy === 'date-asc') {
+      groups.sort((a, b) => a.key.localeCompare(b.key));
+    } else {
+      groups.sort((a, b) => b.key.localeCompare(a.key));
+    }
 
-  // 动态卡片最小宽度与网格样式（支持抽屉弹出时自动少排一列，卡片比例始终稳定）
+    return groups;
+  }, [sortedArtifacts, enableGrouping, sortBy]);
+
   const gridStyle = useMemo(() => {
-    const minWidth = cardSize === 'sm' ? 210 : cardSize === 'lg' ? 380 : 280;
+    const cardWidth = cardSize === 'sm' ? 220 : cardSize === 'lg' ? 380 : 280;
     const gap = cardSize === 'sm' ? '12px' : cardSize === 'lg' ? '24px' : '16px';
     return {
       display: 'grid',
-      gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}px, 1fr))`,
+      gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), ${cardWidth}px))`,
       gap,
     };
   }, [cardSize]);
@@ -240,6 +259,7 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
   const isCompactMode = cardSize === 'sm';
 
   return {
+    enableGrouping,
     sortBy,
     handleSortChange,
     cardSize,
@@ -253,7 +273,6 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     filterHighScore,
     setFilterHighScore,
     highScoreCount,
-    filteredArtifacts,
     sortedArtifacts,
     displayGroups,
     gridStyle,

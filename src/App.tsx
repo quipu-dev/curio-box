@@ -1,4 +1,6 @@
 import { Header } from '@/components/common/Header';
+import { SettingsModal } from '@/components/common/SettingsModal';
+import { SettingsProvider } from '@/context/SettingsContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
 import { TitleSanitizerEngine } from '@/core/engine/title-sanitizer';
@@ -15,7 +17,7 @@ import { ArtifactInspectorDrawer } from '@/features/inspector/ArtifactInspectorD
 import { FullscreenStage } from '@/features/stage/FullscreenStage';
 import { DarkroomStudio } from '@/features/studio/DarkroomStudio';
 import { useHashRoute } from '@/hooks/useHashRoute';
-import { UploadCloud } from 'lucide-react';
+import { Calendar, Clock, Star, Type, UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 function MainApp() {
@@ -24,6 +26,7 @@ function MainApp() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [composerInitialCode, setComposerInitialCode] = useState<string | null>(null);
   const [isAlbumComposerOpen, setIsAlbumComposerOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   const {
     currentRoute,
@@ -42,6 +45,7 @@ function MainApp() {
   const {
     artifacts,
     hasDirectory,
+    currentDirectoryName,
     pendingHandle,
     activeAlbumMeta,
     activeAlbumArtifacts,
@@ -71,6 +75,7 @@ function MainApp() {
   const inspectingFilename = inspectFilename;
 
   const {
+    enableGrouping,
     sortBy,
     handleSortChange,
     cardSize,
@@ -85,6 +90,7 @@ function MainApp() {
     setFilterHighScore,
     highScoreCount,
     sortedArtifacts,
+    displayGroups,
     gridStyle,
     isCompactMode,
   } = useArtifactSortAndGroup(artifacts, searchQuery);
@@ -239,8 +245,8 @@ function MainApp() {
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-main overflow-hidden relative">
       <div
-        className={`flex-1 min-h-0 flex flex-col overflow-hidden transition-[margin] duration-200 ease-out ${
-          inspectingFilename ? 'sm:mr-[480px]' : ''
+        className={`flex-1 min-h-0 flex flex-col overflow-hidden ${
+          inspectingFilename ? 'sm:mr-[420px]' : ''
         }`}
       >
         <Header
@@ -254,15 +260,16 @@ function MainApp() {
           }}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onPickDirectory={handlePickDirectory}
           onImportFromClipboard={handleImportFromClipboard}
           onOpenNewArtifactComposer={handleOpenNewArtifact}
           onOpenNewAlbumComposer={() => setIsAlbumComposerOpen(true)}
           hasDirectory={hasDirectory}
           pendingDirectoryName={pendingHandle?.name}
+          onPickDirectory={handlePickDirectory}
           onRequestPendingPermission={handleRequestPendingPermission}
           resolvedTheme={resolvedTheme}
           onToggleTheme={toggleTheme}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           allTags={allKnownTags}
         />
 
@@ -312,23 +319,74 @@ function MainApp() {
           ) : (
             <>
               {sortedArtifacts.length > 0 ? (
-                <div style={gridStyle}>
-                  {sortedArtifacts.map((artifact) => (
-                    <ArtifactCard
-                      key={artifact.meta.filename}
-                      artifact={artifact}
-                      compact={isCompactMode}
-                      isSelected={inspectingFilename === artifact.meta.filename}
-                      onOpenStage={() => navigateToStage(artifact.meta.filename)}
-                      onOpenStudio={() => navigateToStudio(artifact.meta.filename)}
-                      onOpenInspector={() =>
-                        inspectingFilename === artifact.meta.filename
-                          ? navigateToGallery()
-                          : navigateToInspect(artifact.meta.filename)
-                      }
-                    />
-                  ))}
-                </div>
+                enableGrouping ? (
+                  <div className="flex flex-col gap-8">
+                    {displayGroups.map((group) => {
+                      const IconComponent =
+                        group.icon === 'calendar'
+                          ? Calendar
+                          : group.icon === 'clock'
+                            ? Clock
+                            : group.icon === 'star'
+                              ? Star
+                              : Type;
+
+                      return (
+                        <section key={group.key} className="flex flex-col gap-3.5">
+                          {/* 自然流式分组标题栏（无吸顶） */}
+                          <div className="py-1.5 flex items-center justify-between border-b border-border text-xs font-mono select-none">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1 rounded bg-surface border border-border text-status-info">
+                                <IconComponent className="w-3.5 h-3.5" />
+                              </span>
+                              <h2 className="font-bold text-sm font-sans text-main">{group.key}</h2>
+                            </div>
+                            <span className="text-[11px] text-muted font-mono bg-surface px-2 py-0.5 rounded border border-border">
+                              {group.items.length} 件
+                            </span>
+                          </div>
+
+                          {/* 组内网格 */}
+                          <div style={gridStyle}>
+                            {group.items.map((artifact) => (
+                              <ArtifactCard
+                                key={artifact.meta.filename}
+                                artifact={artifact}
+                                compact={isCompactMode}
+                                isSelected={inspectingFilename === artifact.meta.filename}
+                                onOpenStage={() => navigateToStage(artifact.meta.filename)}
+                                onOpenStudio={() => navigateToStudio(artifact.meta.filename)}
+                                onOpenInspector={() =>
+                                  inspectingFilename === artifact.meta.filename
+                                    ? navigateToGallery()
+                                    : navigateToInspect(artifact.meta.filename)
+                                }
+                              />
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={gridStyle}>
+                    {sortedArtifacts.map((artifact) => (
+                      <ArtifactCard
+                        key={artifact.meta.filename}
+                        artifact={artifact}
+                        compact={isCompactMode}
+                        isSelected={inspectingFilename === artifact.meta.filename}
+                        onOpenStage={() => navigateToStage(artifact.meta.filename)}
+                        onOpenStudio={() => navigateToStudio(artifact.meta.filename)}
+                        onOpenInspector={() =>
+                          inspectingFilename === artifact.meta.filename
+                            ? navigateToGallery()
+                            : navigateToInspect(artifact.meta.filename)
+                        }
+                      />
+                    ))}
+                  </div>
+                )
               ) : (
                 <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded-xl bg-surface">
                   <span className="text-main font-semibold">未匹配到符合检索条件的工件</span>
@@ -442,6 +500,17 @@ function MainApp() {
           </div>
         </div>
       )}
+
+      {/* 系统全局首选项设置弹窗 */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        hasDirectory={hasDirectory}
+        directoryName={currentDirectoryName}
+        pendingDirectoryName={pendingHandle?.name}
+        onPickDirectory={handlePickDirectory}
+        onRequestPendingPermission={handleRequestPendingPermission}
+      />
     </div>
   );
 }
@@ -450,7 +519,9 @@ export function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <MainApp />
+        <SettingsProvider>
+          <MainApp />
+        </SettingsProvider>
       </ToastProvider>
     </ThemeProvider>
   );

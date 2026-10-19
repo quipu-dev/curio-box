@@ -24,6 +24,7 @@ interface TagAutocompleteInputProps {
   className?: string;
   id?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onSelectTag?: (tag: string) => void;
 }
 
 export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
@@ -34,6 +35,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
   className,
   id,
   onKeyDown,
+  onSelectTag,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -122,6 +124,42 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
     [value, onChange, updateSuggestions],
   );
 
+  // 统一的确认/选定动作（兼顾单标签选择模式与多词补全模式）
+  const handleCommitSuggestion = useCallback(
+    (item: TagSuggestion) => {
+      if (onSelectTag) {
+        if (item.type === 'namespace') {
+          const cleanTag = item.insertText.replace(/^-/, '').trim();
+          onChange(cleanTag);
+          requestAnimationFrame(() => {
+            if (inputRef.current) {
+              inputRef.current.focus();
+              inputRef.current.setSelectionRange(cleanTag.length, cleanTag.length);
+              const list = updateSuggestions(cleanTag, cleanTag.length);
+              setIsOpen(list.length > 0);
+            }
+          });
+        } else {
+          const cleanTag = item.insertText.replace(/^-/, '').trim();
+          onSelectTag(cleanTag);
+          onChange('');
+          setActiveIndex(null);
+          // 提交后保持输入框聚焦，并立即基于空文本刷新候选列表，持续展开以支持批量连续添加
+          requestAnimationFrame(() => {
+            if (inputRef.current) {
+              inputRef.current.focus();
+              const list = updateSuggestions('', 0);
+              setIsOpen(list.length > 0);
+            }
+          });
+        }
+      } else {
+        applySuggestion(item);
+      }
+    },
+    [onSelectTag, onChange, updateSuggestions, applySuggestion],
+  );
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.value;
     onChange(nextVal);
@@ -131,17 +169,58 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isOpen && suggestions.length > 0) {
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        // 未手动通过方向键高亮时，默认上屏第 0 个建议项
+    if (e.key === 'Enter') {
+      // 1. 如果用户使用上下键明确高亮了某个候选建议
+      if (isOpen && suggestions.length > 0 && activeIndex !== null) {
+        const targetItem = suggestions[activeIndex];
+        if (targetItem) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleCommitSuggestion(targetItem);
+          return;
+        }
+      }
+
+      // 2. 单标签直达选择模式：若输入框已有文本，回车直接提交此标签并持续保持浮层展开
+      if (onSelectTag) {
+        const trimmed = value.trim();
+        if (trimmed) {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelectTag(trimmed);
+          onChange('');
+          setActiveIndex(null);
+          requestAnimationFrame(() => {
+            if (inputRef.current) {
+              inputRef.current.focus();
+              const list = updateSuggestions('', 0);
+              setIsOpen(list.length > 0);
+            }
+          });
+          return;
+        }
+      } else if (isOpen && suggestions.length > 0) {
+        // 多词查询模式：未高亮时回车默认应用第 0 项补全
+        const targetItem = suggestions[0];
+        if (targetItem) {
+          e.preventDefault();
+          e.stopPropagation();
+          applySuggestion(targetItem);
+          return;
+        }
+      }
+    } else if (e.key === 'Tab') {
+      if (isOpen && suggestions.length > 0) {
         const targetIndex = activeIndex !== null ? activeIndex : 0;
         if (suggestions[targetIndex]) {
           e.preventDefault();
           e.stopPropagation();
-          applySuggestion(suggestions[targetIndex]);
+          handleCommitSuggestion(suggestions[targetIndex]);
           return;
         }
-      } else if (e.key === 'Escape') {
+      }
+    } else if (e.key === 'Escape') {
+      if (isOpen) {
         e.preventDefault();
         setIsOpen(false);
         return;
@@ -233,7 +312,7 @@ export const TagAutocompleteInput: React.FC<TagAutocompleteInputProps> = ({
                       onClick: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        applySuggestion(item);
+                        handleCommitSuggestion(item);
                       },
                       onMouseDown: (e) => {
                         // 阻止输入框失焦以保护光标位置

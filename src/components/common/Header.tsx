@@ -87,13 +87,6 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="h-14 border-b border-border bg-surface px-5 flex items-center justify-between shrink-0 gap-4 z-20">
       <div className="flex items-center gap-6">
-        <div className="font-bold tracking-tight text-sm font-sans flex items-center gap-2">
-          <span>curio-box</span>
-          <span className="text-[10px] text-muted font-mono font-normal hidden sm:inline">
-            {'// 视觉工件画廊'}
-          </span>
-        </div>
-
         {/* 双轨大盘分段器 */}
         <nav
           aria-label="视图模式切换"

@@ -34,18 +34,6 @@ export interface CommitLogEntry {
 }
 
 /**
- * 历史记录类型别名
- */
-export type NegativeLedgerEntry = CommitLogEntry;
-
-export interface NegativeRevision {
-  revision: number;
-  timestamp: string;
-  type: 'snapshot' | 'patch';
-  content: string;
-}
-
-/**
  * 自包含工件沙盒元档案模型 (Schema v2)
  * 严格存储于 .gallery/artifacts/<artifactId>/meta.json
  */
@@ -71,11 +59,6 @@ export function getLastCommitMessage(meta: ArtifactBundleMeta): string {
   const head = meta.history.find((item) => item.revision === meta.currentRevision);
   return head?.message || meta.history[meta.history.length - 1]?.message || '初始版本';
 }
-
-/**
- * 兼容旧命名的元数据类型别名
- */
-export type ArtifactMeta = ArtifactBundleMeta;
 
 export interface Artifact {
   meta: ArtifactBundleMeta;

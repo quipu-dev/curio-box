@@ -21,7 +21,7 @@ export const MetaSealEngine = {
 
     const rawContent = match[2].trim();
 
-    // 1. 优先尝试标准扁平 JSON 解析
+    // 严格按照标准扁平 JSON 符印解析
     if (rawContent.startsWith('{') && rawContent.endsWith('}')) {
       try {
         const parsed = JSON.parse(rawContent);
@@ -56,44 +56,11 @@ export const MetaSealEngine = {
           return result;
         }
       } catch {
-        // 若 JSON 解析异常，继续向下走容错行文本解析
+        return null;
       }
     }
 
-    // 2. 降级兼容旧版 key: value 行文本解析
-    const lines = rawContent.split(/\r?\n/);
-    const result: ExtractedMeta = {};
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
-
-      const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
-      const val = trimmed.slice(colonIdx + 1).trim();
-
-      if (key === 'name') {
-        result.name = val;
-      } else if (key === 'tags' || key === 'tag') {
-        result.tags = val.split(/\s+/).filter(Boolean);
-      } else if (key === 'desc' || key === 'description') {
-        result.description = val;
-      } else if (key === 'rating' || key === 'star') {
-        const parsedRating = Number.parseInt(val, 10);
-        if (!Number.isNaN(parsedRating) && parsedRating >= 1 && parsedRating <= 5) {
-          result.rating = parsedRating;
-        }
-      } else if (key === 'rev' || key === 'revision') {
-        const parsedRev = Number.parseInt(val, 10);
-        if (!Number.isNaN(parsedRev) && parsedRev > 0) {
-          result.revision = parsedRev;
-        }
-      }
-    }
-
-    return result;
+    return null;
   },
 
   /**

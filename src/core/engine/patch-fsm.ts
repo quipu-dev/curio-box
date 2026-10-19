@@ -17,124 +17,118 @@ export interface PatchSimulationResult {
   executedCommands: PatchCommand[];
 }
 
+const FENCE_START_REGEX = /^(`{3,}|~{3,})(.*)$/;
+
 /**
- * 遵循 Quipu 规范的通用代码块解析器
+ * 遵循 Quipu 规范的通用代码块词法解析器（纯函数管线）
  */
-export class StateBlockParser {
-  private readonly fenceStartRegex = /^(`{3,}|~{3,})(.*)$/;
+export function parseStateBlocks(text: string): Statement[] {
+  const statements: Statement[] = [];
+  let currentStatement: Statement | null = null;
 
-  public parse(text: string): Statement[] {
-    const statements: Statement[] = [];
-    let currentStatement: Statement | null = null;
+  const lines = text.split(/\r?\n/);
+  let inBlock = false;
+  let currentFence = '';
+  let currentLang = '';
+  let blockLines: string[] = [];
 
-    const lines = text.split(/\r?\n/);
-    let inBlock = false;
-    let currentFence = '';
-    let currentLang = '';
-    let blockLines: string[] = [];
+  for (const line of lines) {
+    const trimmedLine = line.trim();
 
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-
-      if (!inBlock) {
-        const match = trimmedLine.match(this.fenceStartRegex);
-        if (match) {
-          inBlock = true;
-          currentFence = match[1];
-          currentLang = match[2].trim().toLowerCase();
-          blockLines = [];
+    if (!inBlock) {
+      const match = trimmedLine.match(FENCE_START_REGEX);
+      if (match) {
+        inBlock = true;
+        currentFence = match[1];
+        currentLang = match[2].trim().toLowerCase();
+        blockLines = [];
+      }
+    } else {
+      if (trimmedLine === currentFence) {
+        inBlock = false;
+        let fullContent = blockLines.join('\n');
+        if (fullContent.endsWith('\n')) {
+          fullContent = fullContent.slice(0, -1);
         }
+
+        if (currentLang === 'act') {
+          const actionName = fullContent.trim();
+          currentStatement = { act: actionName, contexts: [] };
+          statements.push(currentStatement);
+        } else if (currentStatement) {
+          currentStatement.contexts.push(fullContent);
+        }
+
+        currentFence = '';
+        currentLang = '';
+        blockLines = [];
       } else {
-        if (trimmedLine === currentFence) {
-          inBlock = false;
-          let fullContent = blockLines.join('\n');
-          if (fullContent.endsWith('\n')) {
-            fullContent = fullContent.slice(0, -1);
-          }
-
-          if (currentLang === 'act') {
-            const actionName = fullContent.trim();
-            currentStatement = { act: actionName, contexts: [] };
-            statements.push(currentStatement);
-          } else if (currentStatement) {
-            currentStatement.contexts.push(fullContent);
-          }
-
-          currentFence = '';
-          currentLang = '';
-          blockLines = [];
-        } else {
-          blockLines.push(line);
-        }
+        blockLines.push(line);
       }
     }
-
-    return statements;
   }
+
+  return statements;
 }
 
 /**
- * 暗房指令调度器
+ * 暗房指令语法分析器（纯函数）
  */
-export class DarkroomPatchFSM {
-  private parser = new StateBlockParser();
+export function parsePatchCommands(input: string): PatchCommand[] {
+  const statements = parseStateBlocks(input);
+  const commands: PatchCommand[] = [];
 
-  public parse(input: string): PatchCommand[] {
-    const statements = this.parser.parse(input);
-    const commands: PatchCommand[] = [];
+  for (const stmt of statements) {
+    const rawAct = stmt.act.trim();
+    const tokens = rawAct.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
 
-    for (const stmt of statements) {
-      const rawAct = stmt.act.trim();
-      const tokens = rawAct.split(/\s+/).filter(Boolean);
-      if (tokens.length === 0) continue;
+    const action = tokens[0] as PatchAction;
 
-      const action = tokens[0] as PatchAction;
+    if (action === 'add_tag' || action === 'remove_tag') {
+      const tagTokens: string[] = tokens.slice(1);
+      for (const ctx of stmt.contexts) {
+        tagTokens.push(...ctx.trim().split(/\s+/).filter(Boolean));
+      }
 
-      if (action === 'add_tag' || action === 'remove_tag') {
-        const tagTokens: string[] = tokens.slice(1);
-        for (const ctx of stmt.contexts) {
-          tagTokens.push(...ctx.trim().split(/\s+/).filter(Boolean));
-        }
-
-        if (tagTokens.length > 0) {
-          commands.push({
-            action,
-            oldDoc: '',
-            newDoc: stmt.contexts.join('\n'),
-            tags: tagTokens,
-          });
-        }
-      } else if (action === 'commit') {
+      if (tagTokens.length > 0) {
         commands.push({
           action,
           oldDoc: '',
-          newDoc: '',
-          commitMessage: stmt.contexts.join('\n').trim(),
-        });
-      } else if (action === 'set_description') {
-        commands.push({
-          action,
-          oldDoc: '',
-          newDoc: '',
-          description: stmt.contexts.join('\n').trim(),
-        });
-      } else if (action === 'write_file') {
-        commands.push({
-          action,
-          oldDoc: '',
-          newDoc: stmt.contexts[0] || '',
-        });
-      } else if (action === 'patch_file') {
-        commands.push({
-          action,
-          oldDoc: stmt.contexts[0] || '',
-          newDoc: stmt.contexts[1] || '',
+          newDoc: stmt.contexts.join('\n'),
+          tags: tagTokens,
         });
       }
+    } else if (action === 'commit') {
+      commands.push({
+        action,
+        oldDoc: '',
+        newDoc: '',
+        commitMessage: stmt.contexts.join('\n').trim(),
+      });
+    } else if (action === 'set_description') {
+      commands.push({
+        action,
+        oldDoc: '',
+        newDoc: '',
+        description: stmt.contexts.join('\n').trim(),
+      });
+    } else if (action === 'write_file') {
+      commands.push({
+        action,
+        oldDoc: '',
+        newDoc: stmt.contexts[0] || '',
+      });
+    } else if (action === 'patch_file') {
+      commands.push({
+        action,
+        oldDoc: stmt.contexts[0] || '',
+        newDoc: stmt.contexts[1] || '',
+      });
     }
-
-    return commands;
   }
+
+  return commands;
 }
 
 export const DarkroomApplier = {

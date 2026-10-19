@@ -33,14 +33,12 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
 
   const handleSaveDesc = async () => {
     setIsSaving(true);
-    setTimeout(async () => {
-      try {
-        await onUpdateDescription(descValue);
-        setIsEditing(false);
-      } finally {
-        setIsSaving(false);
-      }
-    }, 20);
+    try {
+      await onUpdateDescription(descValue);
+      setIsEditing(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

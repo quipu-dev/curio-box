@@ -1,7 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { AssetCacheEngine, type AssetCacheStats } from '@/core/engine/asset-cache';
 import { MetaSealEngine } from '@/core/engine/meta-seal';
-import { DarkroomPatchFSM, type PatchSimulationResult } from '@/core/engine/patch-fsm';
+import { type PatchSimulationResult, parsePatchCommands } from '@/core/engine/patch-fsm';
 import { galleryStorage } from '@/core/storage/fs-storage';
 import { SandboxViewport } from '@/features/sandbox/SandboxViewport';
 import { captureDisplayMediaFrame } from '@/features/sandbox/screen-capture';
@@ -253,12 +253,10 @@ ${MetaSealEngine.strip(loadedSourceCode)}
 
     setIsSimulating(true);
 
-    // 主线程让步，让 UI 能够即时渲染“正在校验...”反馈
-    setTimeout(async () => {
+    requestAnimationFrame(async () => {
       try {
         const baseCode = activeSourceCode;
-        const fsm = new DarkroomPatchFSM();
-        const commands = fsm.parse(patchInput);
+        const commands = parsePatchCommands(patchInput);
 
         // 使用 DarkroomApplier.simulate 统一预演
         const { DarkroomApplier } = await import('@/core/engine/patch-fsm');
@@ -276,7 +274,7 @@ ${MetaSealEngine.strip(loadedSourceCode)}
       } finally {
         setIsSimulating(false);
       }
-    }, 20);
+    });
   };
 
   // 第二步：用户在 Diff 审核界面确认后，真正写入磁盘并创建快照
@@ -284,7 +282,7 @@ ${MetaSealEngine.strip(loadedSourceCode)}
     if (!pendingSimulation) return;
     setIsCommitting(true);
 
-    setTimeout(async () => {
+    requestAnimationFrame(async () => {
       try {
         const baseCode = activeSourceCode;
         await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
@@ -339,7 +337,7 @@ ${MetaSealEngine.strip(loadedSourceCode)}
       } finally {
         setIsCommitting(false);
       }
-    }, 20);
+    });
   };
 
   const handleRestoreRevision = async (targetRev: number) => {

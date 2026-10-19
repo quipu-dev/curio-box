@@ -395,6 +395,7 @@ function MainApp() {
 
       {inspectingArtifact && (
         <ArtifactInspectorDrawer
+          key={inspectingArtifact.meta.id}
           artifact={inspectingArtifact}
           onClose={
             activeAlbumMeta ? () => navigateToAlbumDetail(activeAlbumMeta.id) : navigateToGallery

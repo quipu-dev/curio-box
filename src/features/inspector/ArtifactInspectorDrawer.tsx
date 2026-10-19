@@ -79,16 +79,6 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
   const [historyLedger, setHistoryLedger] = useState<CommitLogEntry[]>([]);
 
-  // 当切换工件时重置状态
-  useEffect(() => {
-    setEditName(artifact.meta.name);
-    setIsEditingName(false);
-    setIsRenaming(false);
-    setEditDesc(artifact.meta.description || '');
-    setIsEditingDesc(false);
-    setIsSavingDesc(false);
-  }, [artifact.meta.name, artifact.meta.description]);
-
   // 加载该工件的历史提交台账
   useEffect(() => {
     let isCancelled = false;
@@ -192,7 +182,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     toast.success(`已开始下载 ${artifact.meta.filename}`);
   };
 
-  // 保存重命名（带主线程让步与状态机锁）
+  // 保存重命名
   const handleSaveRename = async () => {
     const trimmed = editName.trim();
     if (!trimmed) {
@@ -211,37 +201,31 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     }
 
     setIsRenaming(true);
-
-    // 微任务让步，确保加载态立即渲染
-    setTimeout(async () => {
-      try {
-        await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
-        setIsEditingName(false);
-        toast.success('工件重命名成功');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`重命名失败: ${msg}`);
-      } finally {
-        setIsRenaming(false);
-      }
-    }, 20);
+    try {
+      await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
+      setIsEditingName(false);
+      toast.success('工件重命名成功');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`重命名失败: ${msg}`);
+    } finally {
+      setIsRenaming(false);
+    }
   };
 
   // 保存研判描述
   const handleSaveDescription = async () => {
     setIsSavingDesc(true);
-    setTimeout(async () => {
-      try {
-        await onUpdateDescription(artifact.meta.filename, editDesc);
-        setIsEditingDesc(false);
-        toast.success('工件研判描述已更新');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`更新描述失败: ${msg}`);
-      } finally {
-        setIsSavingDesc(false);
-      }
-    }, 20);
+    try {
+      await onUpdateDescription(artifact.meta.filename, editDesc);
+      setIsEditingDesc(false);
+      toast.success('工件研判描述已更新');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`更新描述失败: ${msg}`);
+    } finally {
+      setIsSavingDesc(false);
+    }
   };
 
   // 删除确认

@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "check": "biome check . && tsc --noEmit",
     "checkf": "biome check --fix --unsafe . && tsc --noEmit",
+    "lint:theme": "node scripts/lint-theme.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

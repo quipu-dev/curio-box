@@ -38,7 +38,7 @@ export const AlbumCard: React.FC<AlbumCardProps> = ({ album, onClick }) => {
           {/* 右上角评级与类型徽章 */}
           <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
             {album.meta.rating && album.meta.rating > 0 ? (
-              <div className="bg-surface/90 backdrop-blur-sm border border-status-warn-border px-2 py-0.5 text-[10px] font-mono text-status-warn rounded-full flex items-center gap-1 shadow-sm">
+              <div className="bg-surface border border-status-warn-border px-2 py-0.5 text-[10px] font-mono text-status-warn rounded-full flex items-center gap-1 shadow-sm">
                 <Star className="w-3 h-3 fill-current" />
                 <span>{album.meta.rating}</span>
               </div>
@@ -47,8 +47,8 @@ export const AlbumCard: React.FC<AlbumCardProps> = ({ album, onClick }) => {
             <div
               className={`px-2 py-0.5 text-[10px] font-mono rounded-full border shadow-sm flex items-center gap-1 backdrop-blur-sm ${
                 isSmart
-                  ? 'bg-status-info-bg/90 border-status-info-border text-status-info font-medium'
-                  : 'bg-surface/90 border-border text-main'
+                  ? 'bg-status-info-bg border-status-info-border text-status-info font-medium'
+                  : 'bg-surface border-border text-main'
               }`}
             >
               {isSmart ? <Sparkles className="w-2.5 h-2.5" /> : <Layers className="w-2.5 h-2.5" />}
@@ -57,7 +57,7 @@ export const AlbumCard: React.FC<AlbumCardProps> = ({ album, onClick }) => {
           </div>
 
           {/* 左下角工件数徽标 */}
-          <div className="absolute bottom-2.5 left-2.5 bg-black/75 backdrop-blur-sm border border-zinc-700/60 px-2 py-0.5 rounded text-[11px] font-mono text-zinc-200 flex items-center gap-1">
+          <div className="absolute bottom-2.5 left-2.5 bg-black/75 backdrop-blur-sm border border-zinc-700/60 px-2 py-0.5 rounded text-[11px] font-mono text-white flex items-center gap-1">
             <Layers className="w-3 h-3 text-status-info" />
             <span>{album.artifactCount} 件标本</span>
           </div>
@@ -81,18 +81,18 @@ export const AlbumCard: React.FC<AlbumCardProps> = ({ album, onClick }) => {
             </p>
 
             {album.meta.type === 'smart' ? (
-              <div className="font-mono text-[11px] text-zinc-400 bg-surface-subtle border border-border px-2 py-1 rounded truncate h-6 flex items-center">
+              <div className="font-mono text-[11px] text-muted bg-surface-subtle border border-border px-2 py-1 rounded truncate h-6 flex items-center">
                 DSL: <span className="text-status-info ml-1">{album.meta.query || '（全部）'}</span>
               </div>
             ) : (
-              <div className="font-mono text-[11px] text-muted bg-surface-subtle/50 border border-border/50 px-2 py-1 rounded truncate h-6 flex items-center gap-1">
+              <div className="font-mono text-[11px] text-muted bg-surface-subtle border border-border px-2 py-1 rounded truncate h-6 flex items-center gap-1">
                 <Layers className="w-3 h-3 opacity-60 text-status-info" />
                 <span>手工收纳 · 自由排序</span>
               </div>
             )}
           </div>
 
-          <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[10px] font-mono text-muted">
+          <div className="pt-2 border-t border-border flex items-center justify-between text-[10px] font-mono text-muted">
             <span className="flex items-center gap-1">
               <Calendar className="w-3 h-3 text-muted" />
               <span>{new Date(album.meta.updatedAt).toLocaleDateString()}</span>

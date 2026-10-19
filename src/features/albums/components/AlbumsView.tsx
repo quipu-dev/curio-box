@@ -61,10 +61,10 @@ export const AlbumsView: React.FC<AlbumsViewProps> = ({
       ) : (
         <div className="h-72 border border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-3 text-muted">
           <BookOpen className="w-10 h-10 opacity-30 text-status-info" />
-          <div className="text-sm font-semibold text-zinc-300">
+          <div className="text-sm font-semibold text-main">
             {albums.length === 0 ? '尚未创建任何策展画册' : '未匹配到符合条件的画册'}
           </div>
-          <p className="text-xs max-w-sm text-center leading-relaxed text-zinc-400 font-sans">
+          <p className="text-xs max-w-sm text-center leading-relaxed text-muted font-sans">
             画册可以将零散的工件按特定叙事、教学阶段或算法演化串联成册，并支持一键受限放映与离线 ZIP
             打包。
           </p>

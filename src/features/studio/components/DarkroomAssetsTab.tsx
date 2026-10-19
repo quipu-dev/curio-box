@@ -99,10 +99,10 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
             onChange={(e) => setDescValue(e.target.value)}
             rows={3}
             placeholder="记录工件特点、动画优劣与调整建议..."
-            className="w-full bg-surface border border-sky-400 p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none"
+            className="w-full bg-surface border border-status-info p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none"
           />
         ) : (
-          <div className="text-xs text-zinc-300 font-sans leading-relaxed whitespace-pre-wrap">
+          <div className="text-xs text-main font-sans leading-relaxed whitespace-pre-wrap">
             {description || <span className="text-muted italic">暂无备忘，点击上方“添加”记录</span>}
           </div>
         )}
@@ -146,7 +146,7 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
                 key={asset.url}
                 className="flex items-center justify-between p-2 bg-surface border border-border rounded text-[11px]"
               >
-                <span className="truncate max-w-[280px] text-zinc-300 font-mono">
+                <span className="truncate max-w-[280px] text-main font-mono">
                   {asset.url.split('/').pop()}
                 </span>
                 {asset.status === 'cached' ? (

@@ -64,11 +64,11 @@ export const AlbumTracklist: React.FC<AlbumTracklistProps> = ({
                 onOpenInspector={() => onOpenInspector(art)}
                 badgeSlot={
                   <div className="flex items-center gap-1.5">
-                    <span className="bg-black/80 backdrop-blur-sm text-zinc-200 border border-zinc-700/90 px-2 py-0.5 rounded text-[10px] font-mono">
+                    <span className="bg-black/80 backdrop-blur-sm text-white border border-zinc-700 px-2 py-0.5 rounded text-[10px] font-mono">
                       第 {idx + 1} 幕
                     </span>
                     {isCover && (
-                      <span className="bg-sky-500/90 text-black font-semibold px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-sm">
+                      <span className="bg-sky-500 text-black font-semibold px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-sm">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                         <span>封面</span>
                       </span>
@@ -110,7 +110,7 @@ export const AlbumTracklist: React.FC<AlbumTracklistProps> = ({
                         <button
                           type="button"
                           onClick={() => onSetCover(art.meta.id)}
-                          className={`p-1 border rounded transition-colors ${
+                          className={`p-1 border border-border rounded transition-colors ${
                             isCover
                               ? 'border-sky-500 bg-sky-500/20 text-sky-300'
                               : 'border-border hover:bg-surface-subtle text-muted'

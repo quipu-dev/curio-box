@@ -116,11 +116,9 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
         </header>
 
         {/* 统计指标栏 */}
-        <div className="bg-background/80 border-b border-border px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+        <div className="bg-background border-b border-border px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
           <div className="flex items-center gap-3">
-            <span className="text-zinc-400">
-              已预演指令: {simulation.executedCommands.length} 条
-            </span>
+            <span className="text-muted">已预演指令: {simulation.executedCommands.length} 条</span>
             <div className="h-3 w-px bg-border" />
             {simulation.hasCodeChange ? (
               <span className="flex items-center gap-1.5">
@@ -143,7 +141,7 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
             {simulation.hasDescChange && (
               <>
                 <div className="h-3 w-px bg-border" />
-                <span className="text-purple-400 flex items-center gap-1">
+                <span className="text-status-info flex items-center gap-1">
                   <MessageSquareQuote className="w-3 h-3" />
                   <span>备忘已更新</span>
                 </span>
@@ -197,7 +195,7 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
                 <GitCommit className="w-3.5 h-3.5 text-status-success" />
                 <span>本次变更提交说明 (Commit Message)</span>
               </div>
-              <div className="text-xs font-sans text-zinc-200 leading-relaxed bg-surface/80 p-2.5 rounded border border-border whitespace-pre-wrap select-text">
+              <div className="text-xs font-sans text-main leading-relaxed bg-surface p-2.5 rounded border border-border whitespace-pre-wrap select-text">
                 {simulation.nextCommitMessage}
               </div>
             </div>
@@ -238,10 +236,10 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
               {simulation.hasDescChange && (
                 <div className="bg-background border border-border rounded p-3 flex flex-col gap-2">
                   <div className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1">
-                    <MessageSquareQuote className="w-3 h-3 text-purple-400" />
+                    <MessageSquareQuote className="w-3 h-3 text-status-info" />
                     <span>研判备忘更新</span>
                   </div>
-                  <div className="text-[11px] font-sans leading-relaxed text-zinc-300 bg-surface p-2 rounded border border-border whitespace-pre-wrap">
+                  <div className="text-[11px] font-sans leading-relaxed text-main bg-surface p-2 rounded border border-border whitespace-pre-wrap">
                     {simulation.nextDescription || (
                       <span className="text-muted italic">（清空备忘）</span>
                     )}
@@ -268,13 +266,13 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
                             ? 'bg-status-success-bg text-status-success'
                             : isDel
                               ? 'bg-status-error-bg text-status-error line-through'
-                              : 'text-zinc-400 hover:bg-zinc-900/60'
+                              : 'text-muted hover:bg-surface-subtle'
                         }`}
                       >
-                        <span className="w-10 shrink-0 text-zinc-600 select-none text-right pr-2">
+                        <span className="w-10 shrink-0 text-muted select-none text-right pr-2">
                           {line.oldLineNumber || ''}
                         </span>
-                        <span className="w-10 shrink-0 text-zinc-600 select-none text-right pr-2">
+                        <span className="w-10 shrink-0 text-muted select-none text-right pr-2">
                           {line.newLineNumber || ''}
                         </span>
                         <span className="w-4 shrink-0 select-none font-bold">
@@ -291,7 +289,7 @@ export const DarkroomDiffModal: React.FC<DarkroomDiffModalProps> = ({
                 <textarea
                   readOnly
                   value={simulation.nextCode}
-                  className="w-full flex-1 p-3 bg-transparent text-zinc-300 font-mono text-[11px] outline-none resize-none leading-relaxed select-text"
+                  className="w-full flex-1 p-3 bg-transparent text-main font-mono text-[11px] outline-none resize-none leading-relaxed select-text"
                 />
               )}
             </div>

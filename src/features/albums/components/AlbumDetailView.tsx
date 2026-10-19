@@ -195,7 +195,7 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({
 
           <div className="flex items-center gap-2">
             <span
-              className={`px-2 py-0.5 text-[10px] rounded-full border flex items-center gap-1 ${
+              className={`px-2 py-0.5 text-[10px] rounded-full border border-border flex items-center gap-1 ${
                 album.type === 'smart'
                   ? 'bg-status-info-bg border-status-info-border text-status-info font-medium'
                   : 'bg-surface border-border text-main'

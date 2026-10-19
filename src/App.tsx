@@ -15,7 +15,7 @@ import { ArtifactInspectorDrawer } from '@/features/inspector/ArtifactInspectorD
 import { FullscreenStage } from '@/features/stage/FullscreenStage';
 import { DarkroomStudio } from '@/features/studio/DarkroomStudio';
 import { useHashRoute } from '@/hooks/useHashRoute';
-import { Calendar, Clock, Star, UploadCloud } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 function MainApp() {
@@ -81,11 +81,19 @@ function MainApp() {
     filterUnclassified,
     setFilterUnclassified,
     unclassifiedCount,
+    filterHighScore,
+    setFilterHighScore,
+    highScoreCount,
     sortedArtifacts,
-    displayGroups,
     gridStyle,
     isCompactMode,
   } = useArtifactSortAndGroup(artifacts, searchQuery);
+
+  const handleResetFilters = useCallback(() => {
+    setFilterNeedsPoster(false);
+    setFilterUnclassified(false);
+    setFilterHighScore(false);
+  }, [setFilterNeedsPoster, setFilterUnclassified, setFilterHighScore]);
 
   const { isDragOver } = useGlobalDropZone({
     onHtmlDrop: (text, filename) => {
@@ -256,8 +264,24 @@ function MainApp() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={toggleTheme}
           allTags={allKnownTags}
+        />
+
+        <GallerySortBar
+          totalCount={artifacts.length}
+          sortBy={sortBy}
+          onSortChange={handleSortChange}
           cardSize={cardSize}
           onCardSizeChange={handleCardSizeChange}
+          filterNeedsPoster={filterNeedsPoster}
+          onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
+          needsPosterCount={needsPosterCount}
+          filterUnclassified={filterUnclassified}
+          onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
+          unclassifiedCount={unclassifiedCount}
+          filterHighScore={filterHighScore}
+          onToggleHighScore={() => setFilterHighScore((prev) => !prev)}
+          highScoreCount={highScoreCount}
+          onResetFilters={handleResetFilters}
         />
 
         <main className="flex-1 min-h-0 overflow-y-auto p-6 md:p-8 overscroll-contain">
@@ -287,70 +311,43 @@ function MainApp() {
             />
           ) : (
             <>
-              <GallerySortBar
-                totalCount={artifacts.length}
-                matchedCount={sortedArtifacts.length}
-                hasDirectory={hasDirectory}
-                sortBy={sortBy}
-                onSortChange={handleSortChange}
-                filterNeedsPoster={filterNeedsPoster}
-                onToggleNeedsPoster={() => setFilterNeedsPoster((prev) => !prev)}
-                needsPosterCount={needsPosterCount}
-                filterUnclassified={filterUnclassified}
-                onToggleUnclassified={() => setFilterUnclassified((prev) => !prev)}
-                unclassifiedCount={unclassifiedCount}
-              />
-
-              {displayGroups.length > 0 && displayGroups[0].items.length > 0 ? (
-                <div className="flex flex-col gap-10">
-                  {displayGroups.map((group) => (
-                    <section key={group.key} className="flex flex-col gap-4">
-                      <div className="py-2 border-b border-border flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wide text-main">
-                          {group.icon === 'star' ? (
-                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                          ) : group.icon === 'clock' ? (
-                            <Clock className="w-3.5 h-3.5 text-amber-400" />
-                          ) : (
-                            <Calendar className="w-3.5 h-3.5 text-sky-400" />
-                          )}
-                          <span>{group.key}</span>
-                        </div>
-                        <div className="text-[11px] font-mono text-muted">
-                          {group.items.length} 件工件
-                        </div>
-                      </div>
-
-                      <div style={gridStyle}>
-                        {group.items.map((artifact) => (
-                          <ArtifactCard
-                            key={artifact.meta.filename}
-                            artifact={artifact}
-                            compact={isCompactMode}
-                            isSelected={inspectingFilename === artifact.meta.filename}
-                            onOpenStage={(art) => navigateToStage(art.meta.filename)}
-                            onOpenStudio={(art) => navigateToStudio(art.meta.filename)}
-                            onOpenInspector={(art) =>
-                              inspectingFilename === art.meta.filename
-                                ? navigateToGallery()
-                                : navigateToInspect(art.meta.filename)
-                            }
-                          />
-                        ))}
-                      </div>
-                    </section>
+              {sortedArtifacts.length > 0 ? (
+                <div style={gridStyle}>
+                  {sortedArtifacts.map((artifact) => (
+                    <ArtifactCard
+                      key={artifact.meta.filename}
+                      artifact={artifact}
+                      compact={isCompactMode}
+                      isSelected={inspectingFilename === artifact.meta.filename}
+                      onOpenStage={() => navigateToStage(artifact.meta.filename)}
+                      onOpenStudio={() => navigateToStudio(artifact.meta.filename)}
+                      onOpenInspector={() =>
+                        inspectingFilename === artifact.meta.filename
+                          ? navigateToGallery()
+                          : navigateToInspect(artifact.meta.filename)
+                      }
+                    />
                   ))}
                 </div>
               ) : (
-                <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded">
-                  <span>未匹配到符合检索条件的工件</span>
-                  <span className="text-xs opacity-60">
+                <div className="h-64 flex flex-col items-center justify-center text-muted font-mono text-sm gap-2 border border-dashed border-border rounded-xl bg-surface">
+                  <span className="text-main font-semibold">未匹配到符合检索条件的工件</span>
+                  <span className="text-xs text-muted">
                     {filterNeedsPoster
                       ? '所有工件均已定格封面，可点击“待定格”胶囊切回完整列表'
                       : filterUnclassified
                         ? '所有工件均已完成分类，可点击“未分类”胶囊切回完整列表'
-                        : '尝试修改筛选词或清除过滤条件'}
+                        : filterHighScore
+                          ? '暂无评分为 4 星以上的工件，可重置筛选'
+                          : '尝试修改筛选词或清除过滤条件'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="mt-2 px-3 py-1 bg-surface-elevated hover:bg-surface-subtle border border-border rounded text-xs text-main transition-colors"
+                  >
+                    重置筛选条件
+                  </button>
                 </div>
               )}
             </>

@@ -4,28 +4,17 @@ import { MetaSealEngine } from '@/core/engine/meta-seal';
 import { TagQueryEngine } from '@/core/engine/tag-engine';
 import { TitleSanitizerEngine } from '@/core/engine/title-sanitizer';
 import { galleryStorage } from '@/core/storage/fs-storage';
-import { type Artifact, type CommitLogEntry, getLastCommitMessage } from '@/types';
+import type { Artifact, CommitLogEntry } from '@/types';
 import {
-  Calendar,
   Check,
   ChevronLeft,
   ChevronRight,
   Code2,
   Copy,
   Download,
-  Edit2,
-  Eye,
-  FileCode,
-  GitCommit,
-  HardDrive,
-  History,
-  Layers,
   Loader2,
-  MessageSquareQuote,
-  Plus,
-  Save,
+  Play,
   Star,
-  Tag as TagIcon,
   Trash2,
   X,
 } from 'lucide-react';
@@ -70,14 +59,17 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const { toast } = useToast();
   const [newTagInput, setNewTagInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
-  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(artifact.meta.name);
+  const [descValue, setDescValue] = useState(artifact.meta.description || '');
   const [isRenaming, setIsRenaming] = useState(false);
-  const [editName, setEditName] = useState(artifact.meta.name);
-  const [editDesc, setEditDesc] = useState(artifact.meta.description || '');
-  const [isEditingDesc, setIsEditingDesc] = useState(false);
-  const [isSavingDesc, setIsSavingDesc] = useState(false);
   const [sourceCode, setSourceCode] = useState<string>(artifact.sourceCode || '');
   const [historyLedger, setHistoryLedger] = useState<CommitLogEntry[]>([]);
+
+  // 监听工件切换，保持状态与当前工件严格对齐
+  useEffect(() => {
+    setNameValue(artifact.meta.name);
+    setDescValue(artifact.meta.description || '');
+  }, [artifact.meta.name, artifact.meta.description]);
 
   // 加载该工件的历史提交台账
   useEffect(() => {
@@ -109,11 +101,48 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     };
   }, [artifact.meta.filename, artifact.sourceCode]);
 
-  // 评分交互（由底层提供乐观更新，毫秒级响应）
+  // 评分交互
   const handleRatingClick = (star: number) => {
     const nextRating = artifact.meta.rating === star ? 0 : star;
     onUpdateRating(artifact.meta.filename, nextRating);
-    toast.success(nextRating > 0 ? `已将评分更新为 ${nextRating} 星` : '已清除星级评分');
+    toast.success(nextRating > 0 ? `已设定为 ${nextRating} 星` : '已清除星级');
+  };
+
+  // 保存名称
+  const handleBlurRename = async () => {
+    const trimmed = nameValue.trim();
+    if (!trimmed || trimmed === artifact.meta.name) return;
+
+    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(trimmed);
+    const otherFiles = existingFilenames.filter((f) => f !== artifact.meta.filename);
+    const uniqueFile = TitleSanitizerEngine.deduplicateFilename(safeFile, otherFiles);
+    const newDisplayName = uniqueFile.replace(/\.html$/, '');
+
+    setIsRenaming(true);
+    try {
+      await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
+      toast.success('工件名称已保存');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`重命名失败: ${msg}`);
+      setNameValue(artifact.meta.name);
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  // 自动失焦保存研判描述
+  const handleBlurDescription = async () => {
+    const trimmed = descValue.trim();
+    if (trimmed === (artifact.meta.description || '')) return;
+
+    try {
+      await onUpdateDescription(artifact.meta.filename, trimmed);
+      toast.success('研判备忘已自动保存');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`保存备忘失败: ${msg}`);
+    }
   };
 
   // 添加标签
@@ -136,9 +165,8 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
       const nextTags = Array.from(existingSet);
       setNewTagInput('');
       await onUpdateTags(artifact.meta.filename, nextTags);
-      toast.success(`已添加 ${addedCount} 个新标签`);
+      toast.success(`已追加 ${addedCount} 个新标签`);
     } else {
-      toast.info('标签已存在');
       setNewTagInput('');
     }
   };
@@ -147,10 +175,9 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   const handleRemoveTag = async (targetTag: string) => {
     const nextTags = artifact.meta.tags.filter((t) => t !== targetTag);
     await onUpdateTags(artifact.meta.filename, nextTags);
-    toast.info(`已移除标签: ${targetTag}`);
   };
 
-  // 复制完整源码：动态就地注水当前最新元数据，彻底杜绝状态过期
+  // 复制完整源码
   const handleCopySource = () => {
     if (!sourceCode) {
       toast.warn('源码尚未载入完成，请稍候');
@@ -159,11 +186,11 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     const exportableHtml = MetaSealEngine.inject(sourceCode, artifact.meta);
     navigator.clipboard.writeText(exportableHtml);
     setCopiedCode(true);
-    toast.success('已复制包含最新元数据的完整 HTML 源码');
+    toast.success('已复制包含内联符印元数据的单文件 HTML 源码');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 下载 HTML 文件到本地：动态就地注水当前最新元数据
+  // 下载 HTML 文件到本地
   const handleDownloadSource = () => {
     if (!sourceCode) {
       toast.warn('源码尚未载入完成，请稍候');
@@ -182,56 +209,10 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
     toast.success(`已开始下载 ${artifact.meta.filename}`);
   };
 
-  // 保存重命名
-  const handleSaveRename = async () => {
-    const trimmed = editName.trim();
-    if (!trimmed) {
-      toast.warn('工件名称不能为空');
-      return;
-    }
-
-    const safeFile = TitleSanitizerEngine.toSafeHtmlFilename(trimmed);
-    const otherFiles = existingFilenames.filter((f) => f !== artifact.meta.filename);
-    const uniqueFile = TitleSanitizerEngine.deduplicateFilename(safeFile, otherFiles);
-    const newDisplayName = uniqueFile.replace(/\.html$/, '');
-
-    if (uniqueFile === artifact.meta.filename && newDisplayName === artifact.meta.name) {
-      setIsEditingName(false);
-      return;
-    }
-
-    setIsRenaming(true);
-    try {
-      await onRename(artifact.meta.filename, uniqueFile, newDisplayName);
-      setIsEditingName(false);
-      toast.success('工件重命名成功');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`重命名失败: ${msg}`);
-    } finally {
-      setIsRenaming(false);
-    }
-  };
-
-  // 保存研判描述
-  const handleSaveDescription = async () => {
-    setIsSavingDesc(true);
-    try {
-      await onUpdateDescription(artifact.meta.filename, editDesc);
-      setIsEditingDesc(false);
-      toast.success('工件研判描述已更新');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`更新描述失败: ${msg}`);
-    } finally {
-      setIsSavingDesc(false);
-    }
-  };
-
   // 删除确认
   const handleDeleteArtifact = async () => {
     const confirmed = window.confirm(
-      `确定要销毁工件【${artifact.meta.name}】吗？此操作将永久删除磁盘物理源文件、底片历史快照及封面。`,
+      `确定要销毁工件【${artifact.meta.name}】吗？此操作将永久删除本地源文件及快照底片。`,
     );
     if (!confirmed) return;
 
@@ -248,30 +229,25 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
   return (
     <aside
       aria-label="工件档案信息栏"
-      className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-30 bg-surface border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-250 select-none"
+      className="fixed top-0 right-0 h-full w-full sm:w-[420px] z-30 bg-surface border-l border-border shadow-2xl flex flex-col overflow-hidden text-main animate-in slide-in-from-right duration-200 select-none font-mono"
     >
-      {/* 顶部标题栏 */}
-      <header className="h-14 bg-background/90 border-b border-border px-4 flex justify-between items-center gap-3 shrink-0 font-mono text-xs">
+      {/* 档案顶部导航栏 */}
+      <header className="h-14 border-b border-border px-5 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1.5 bg-status-info-bg border border-status-info-border text-status-info rounded shrink-0">
-            <FileCode className="w-4 h-4" />
-          </div>
-          <div className="truncate">
-            <div className="font-bold text-sm font-sans tracking-wide truncate">标本档案</div>
-            <div className="text-[11px] text-muted font-mono truncate">
-              {artifact.meta.filename}
-            </div>
-          </div>
+          <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+          <span className="text-xs font-bold tracking-wider uppercase text-muted">
+            标本档案检视
+          </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5">
           {(onPrev || onNext) && (
             <div className="flex items-center border border-border rounded overflow-hidden mr-1">
               <button
                 type="button"
                 onClick={onPrev}
                 disabled={!hasPrev}
-                className="p-1.5 text-muted hover:text-main hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="p-1.5 text-muted hover:text-main hover:bg-border disabled:opacity-30 transition-colors"
                 title="上一件工件 (← / [)"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -280,7 +256,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
                 type="button"
                 onClick={onNext}
                 disabled={!hasNext}
-                className="p-1.5 text-muted hover:text-main hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent transition-colors border-l border-border"
+                className="p-1.5 text-muted hover:text-main hover:bg-border disabled:opacity-30 transition-colors border-l border-border"
                 title="下一件工件 (→ / ])"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -291,393 +267,222 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           <button
             type="button"
             onClick={() => onOpenStage(artifact)}
-            className="flex items-center gap-1 px-2 py-1.5 bg-background border border-border rounded hover:bg-surface text-xs font-mono transition-colors"
-            title="全屏放映舞台"
+            className="px-2.5 py-1.5 bg-status-info-bg hover:bg-sky-500/20 text-status-info border border-status-info-border rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+            title="全屏放映"
           >
-            <Eye className="w-3.5 h-3.5 text-status-info" />
-            <span className="hidden sm:inline">放映</span>
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>放映</span>
           </button>
 
           <button
             type="button"
             onClick={() => onOpenStudio(artifact)}
-            className="flex items-center gap-1 px-2 py-1.5 bg-status-info-bg text-status-info border border-status-info-border rounded hover:bg-sky-500/30 text-xs font-mono transition-colors"
-            title="进入暗房工作台"
+            className="px-2.5 py-1.5 bg-surface-subtle hover:bg-surface-elevated text-main border border-border rounded-lg text-xs font-mono flex items-center gap-1 transition-colors"
+            title="进入镜像暗房工作台"
           >
-            <Code2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">暗房</span>
+            <Code2 className="w-3.5 h-3.5 text-status-info" />
+            <span>暗房</span>
           </button>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-muted hover:text-main rounded hover:bg-border transition-colors ml-0.5"
-            title="关闭信息栏 (Esc)"
+            className="p-1.5 text-muted hover:text-main rounded-lg hover:bg-surface-elevated transition-colors ml-1"
+            title="关闭 (Esc)"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* 核心检视内容（添加 min-h-0 解决 flex 子项溢出不触发滚动的问题） */}
-      <div className="flex-1 min-h-0 p-4 md:p-5 flex flex-col gap-4 overflow-y-auto font-mono text-xs overscroll-contain">
-        {/* 名称与评分卡片 */}
-        <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-3">
-          <div className="flex-1 min-w-0">
-            {isEditingName ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  disabled={isRenaming}
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveRename();
-                    if (e.key === 'Escape') setIsEditingName(false);
-                  }}
-                  placeholder="工件名称"
-                  className="bg-surface border border-sky-400 px-2.5 py-1 rounded text-sm text-main outline-none font-sans font-semibold flex-1 disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  disabled={isRenaming}
-                  onClick={handleSaveRename}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 text-black font-semibold rounded text-xs hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
-                >
-                  {isRenaming ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>保存中</span>
-                    </>
-                  ) : (
-                    <span>保存</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  disabled={isRenaming}
-                  onClick={() => setIsEditingName(false)}
-                  className="px-2 py-1 text-muted hover:text-main text-xs transition-colors shrink-0 disabled:opacity-50"
-                >
-                  取消
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base font-sans text-main truncate">
-                  {artifact.meta.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditName(artifact.meta.name);
-                    setIsEditingName(true);
-                  }}
-                  className="p-1 text-muted hover:text-main rounded hover:bg-surface"
-                  title="重命名工件"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* 1-5 星级评分交互（瞬时响应） */}
-          <div className="flex items-center justify-between bg-surface px-3 py-1.5 rounded border border-border">
-            <span className="text-[10px] uppercase text-muted tracking-wider">工件评级</span>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => handleRatingClick(star)}
-                  className="p-0.5 hover:scale-110 transition-transform outline-none"
-                  title={`${star} 星`}
-                >
-                  <Star
-                    className={`w-4 h-4 transition-colors ${
-                      star <= (artifact.meta.rating || 0)
-                        ? 'fill-amber-400 text-status-warn'
-                        : 'text-muted hover:text-status-warn'
-                    }`}
-                  />
-                </button>
-              ))}
+      {/* 核心元数据管理流 */}
+      <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 text-xs">
+        {/* 卡片 1：工件名称与星级一体化编辑 */}
+        <div className="bg-surface-subtle p-3.5 rounded-xl border border-border flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[10px] text-muted uppercase tracking-wider">
+              <span>标本命名</span>
+              <span className="text-muted font-mono text-[11px]">{artifact.meta.filename}</span>
+            </div>
+            <div className="relative">
+              <input
+                type="text"
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                onBlur={handleBlurRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleBlurRename();
+                }}
+                disabled={isRenaming}
+                className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-sm text-main font-bold focus:border-status-info outline-none"
+              />
+              {isRenaming && (
+                <div className="absolute right-2 top-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-status-info" />
+                </div>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* 最新 Commit 提交说明区块 */}
-        <div className="bg-background border border-status-success-border p-3.5 rounded-lg flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase text-status-success tracking-wider flex items-center gap-1.5 font-bold">
-              <GitCommit className="w-3.5 h-3.5 text-status-success" />
-              <span>最新提交说明 (Commit)</span>
-            </span>
-            <span className="text-[10px] font-mono text-muted">
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-muted mr-1 font-medium">评级:</span>
+              <div className="flex items-center text-amber-400 gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => handleRatingClick(star)}
+                    className="p-0.5 hover:scale-110 transition-transform outline-none"
+                  >
+                    <Star
+                      className={`w-4 h-4 transition-colors ${
+                        star <= (artifact.meta.rating || 0)
+                          ? 'fill-amber-400 text-amber-400'
+                          : 'text-muted/40 hover:text-amber-400'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded bg-surface-elevated border border-border text-[10px] text-muted font-semibold">
               REV:{artifact.meta.currentRevision}
             </span>
           </div>
-
-          <div className="text-xs font-sans text-main leading-relaxed bg-surface-subtle p-2.5 rounded border border-border whitespace-pre-wrap select-text">
-            {getLastCommitMessage(artifact.meta)}
-          </div>
         </div>
 
-        {/* 研判备忘区块 */}
-        <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-2.5">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <MessageSquareQuote className="w-3 h-3 text-status-info" />
-              <span>研判备忘 / 描述</span>
-            </span>
-
-            {isEditingDesc ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={isSavingDesc}
-                  onClick={handleSaveDescription}
-                  className="flex items-center gap-1 px-2 py-0.5 bg-sky-500 text-black font-semibold rounded text-[11px] hover:opacity-90 disabled:opacity-50 transition-opacity"
-                >
-                  {isSavingDesc ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Save className="w-3 h-3" />
-                  )}
-                  <span>{isSavingDesc ? '保存中' : '保存'}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingDesc}
-                  onClick={() => {
-                    setEditDesc(artifact.meta.description || '');
-                    setIsEditingDesc(false);
-                  }}
-                  className="px-1.5 py-0.5 text-muted hover:text-main text-[11px] transition-colors disabled:opacity-50"
-                >
-                  取消
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsEditingDesc(true)}
-                className="flex items-center gap-1 text-[11px] text-status-info hover:text-status-info"
-              >
-                <Edit2 className="w-3 h-3" />
-                <span>{artifact.meta.description ? '编辑' : '添加备忘'}</span>
-              </button>
-            )}
+        {/* 卡片 2：策展研判备忘 (Memo) */}
+        <div className="bg-surface-subtle p-3.5 rounded-xl border border-border flex flex-col gap-2">
+          <div className="flex items-center justify-between text-[10px] text-muted uppercase tracking-wider">
+            <span>策展研判备忘 (Memo)</span>
+            <span className="text-status-success font-semibold text-[10px]">失焦自动保存</span>
           </div>
-
-          {isEditingDesc ? (
-            <textarea
-              disabled={isSavingDesc}
-              value={editDesc}
-              onChange={(e) => setEditDesc(e.target.value)}
-              placeholder="记录工件特点、亮点与不足..."
-              rows={3}
-              className="w-full bg-surface border border-sky-400 p-2 rounded text-xs text-main outline-none font-sans leading-relaxed resize-none disabled:opacity-50"
-            />
-          ) : artifact.meta.description ? (
-            <button
-              type="button"
-              onClick={() => setIsEditingDesc(true)}
-              className="w-full text-left text-xs font-sans text-main leading-relaxed bg-surface/40 p-2.5 rounded border border-border/40 cursor-pointer hover:border-sky-500/60 hover:bg-surface/80 hover:text-main transition-all whitespace-pre-wrap select-text group"
-              title="点击编辑备忘"
-            >
-              {artifact.meta.description}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingDesc(true)}
-              className="w-full text-left text-[11px] font-sans text-muted italic bg-surface/20 p-2.5 rounded border border-dashed border-border/40 cursor-pointer hover:border-sky-500/60 hover:bg-surface/40 hover:text-zinc-300 transition-all"
-            >
-              暂未记录研判心得，点击此处快速记录...
-            </button>
-          )}
+          <textarea
+            rows={3}
+            value={descValue}
+            onChange={(e) => setDescValue(e.target.value)}
+            onBlur={handleBlurDescription}
+            placeholder="输入针对此标本的技术特性、渲染瓶颈或演化思路..."
+            className="w-full bg-background border border-border p-2.5 rounded-lg text-xs text-main placeholder:text-muted outline-none focus:border-status-info resize-none leading-relaxed font-sans"
+          />
         </div>
 
-        {/* 底片修订概况与深度工件台入口 */}
-        <div className="border border-border rounded-lg p-3 bg-background flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5 text-status-warn" />
-              <span>底片快照链台账</span>
-            </span>
-            <span className="text-[10px] font-mono text-muted">
-              共 {historyLedger.length} 个修订版本
-            </span>
+        {/* 卡片 3：体系化标签 (Tags) */}
+        <div className="bg-surface-subtle p-3.5 rounded-xl border border-border flex flex-col gap-3">
+          <div className="flex items-center justify-between text-[10px] text-muted uppercase tracking-wider">
+            <span>体系化标签 (Tags)</span>
+            <span className="text-muted">{artifact.meta.tags.length} 个已附加</span>
           </div>
 
-          <div className="text-[11px] text-zinc-400 font-sans leading-relaxed">
-            如需进行行级 Diff
-            审查、提示词协同注入、历史版本检视（Checkout）或分支回滚，请进入镜像暗房。
-          </div>
-
-          <button
-            type="button"
-            onClick={() => onOpenStudio(artifact)}
-            className="w-full mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 bg-surface hover:bg-border border border-border text-status-info text-xs rounded transition-colors"
-          >
-            <Code2 className="w-3.5 h-3.5" />
-            <span>进入镜像暗房工作台 (Darkroom Studio)</span>
-          </button>
-        </div>
-
-        {/* 属性状态矩阵 */}
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
-          <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
-            <span className="text-muted flex items-center gap-1">
-              <Layers className="w-3 h-3 text-status-info" />
-              <span>底片修订</span>
-            </span>
-            <span className="font-bold text-main">REV:{artifact.meta.currentRevision}</span>
-          </div>
-
-          <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
-            <span className="text-muted flex items-center gap-1">
-              <HardDrive className="w-3 h-3 text-status-warn" />
-              <span>源码体量</span>
-            </span>
-            <span className="font-bold text-main">{sourceCode.length} 字符</span>
-          </div>
-
-          <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
-            <span className="text-muted flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-status-info" />
-              <span>导入时间</span>
-            </span>
-            <span className="font-medium text-main truncate">
-              {new Date(artifact.meta.createdAt || artifact.meta.updatedAt).toLocaleDateString()}
-            </span>
-          </div>
-
-          <div className="bg-background border border-border p-2.5 rounded flex flex-col gap-0.5">
-            <span className="text-muted flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-status-success" />
-              <span>更新时间</span>
-            </span>
-            <span className="font-medium text-main truncate">
-              {new Date(artifact.meta.updatedAt).toLocaleDateString()}
-            </span>
-          </div>
-        </div>
-
-        {/* 标签管理工坊 */}
-        <div className="bg-background border border-border p-3.5 rounded-lg flex flex-col gap-3">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase text-muted tracking-wider flex items-center gap-1.5">
-              <TagIcon className="w-3 h-3 text-status-success" />
-              <span>工件标签 ({artifact.meta.tags.length})</span>
-            </span>
-            <span className="text-[10px] text-muted">点击 × 移除</span>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5 min-h-[30px] items-center">
+          <div className="flex flex-wrap gap-1.5 min-h-[26px]">
             {artifact.meta.tags.map((rawTag) => {
               const parsed = TagQueryEngine.parseTag(rawTag);
               return (
                 <span
                   key={rawTag}
-                  className="inline-flex items-center gap-1 bg-surface border border-border px-2 py-0.5 rounded text-[11px] group"
+                  className="inline-flex items-center gap-1 bg-surface-elevated px-2 py-1 rounded text-main border border-border text-[11px]"
                 >
                   {parsed.namespace && <span className="text-muted">{parsed.namespace}:</span>}
-                  <span className="font-medium text-main">{parsed.value}</span>
+                  <span className="font-medium">{parsed.value}</span>
                   <button
                     type="button"
                     onClick={() => handleRemoveTag(rawTag)}
-                    className="text-muted hover:text-status-error transition-colors ml-0.5"
-                    title="移除此标签"
+                    className="text-muted hover:text-status-error transition-colors ml-1 font-bold"
+                    title="移除"
                   >
-                    <X className="w-3 h-3" />
+                    ×
                   </button>
                 </span>
               );
             })}
           </div>
 
-          <div className="flex items-center gap-2 mt-1">
-            <div className="flex-1">
-              <TagAutocompleteInput
-                value={newTagInput}
-                onChange={setNewTagInput}
-                allTags={allTags}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-                placeholder="追加标签 (例如：形态:webgl 物理:粒子)..."
-                className="w-full bg-surface border border-border px-2.5 py-1.5 rounded text-xs text-main outline-none focus:border-emerald-400"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleAddTag}
-              className="flex items-center gap-1 bg-status-success-bg text-status-success border border-status-success-border hover:bg-emerald-500/30 px-3 py-1.5 rounded transition-colors text-xs font-semibold shrink-0"
-            >
-              <Plus className="w-3 h-3" />
-              <span>添加</span>
-            </button>
-          </div>
+          <TagAutocompleteInput
+            value={newTagInput}
+            onChange={setNewTagInput}
+            allTags={allTags}
+            placeholder="+ 追加标签 (回车上屏，支持命名空间:...)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddTag();
+              }
+            }}
+            className="w-full bg-background border border-border px-3 py-1.5 rounded-lg text-xs text-main placeholder:text-muted outline-none focus:border-status-info font-mono"
+          />
         </div>
 
-        {/* HTML 源码导出与操作栏（移除文本查看器，精炼为复制与下载） */}
-        <div className="bg-background border border-border p-3 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-status-info-bg border border-status-info-border text-status-info rounded">
-              <Code2 className="w-3.5 h-3.5" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-semibold text-main">工件 HTML 源码</span>
-              <span className="text-[10px] text-muted font-mono">
-                {sourceCode ? `${sourceCode.length} 字符` : '载入中...'}
-              </span>
-            </div>
+        {/* 极简高频动作带 */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handleCopySource}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-border bg-surface-subtle hover:bg-surface-elevated text-main transition-colors text-xs"
+            title="复制包含内联符印元数据的单文件 HTML 源码"
+          >
+            {copiedCode ? (
+              <Check className="w-3.5 h-3.5 text-status-success" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-status-info" />
+            )}
+            <span>{copiedCode ? '已复制' : '复制 HTML'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadSource}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-border bg-surface-subtle hover:bg-surface-elevated text-main transition-colors text-xs"
+            title="直接下载 HTML 源文件到本地"
+          >
+            <Download className="w-3.5 h-3.5 text-muted" />
+            <span>导出 HTML</span>
+          </button>
+        </div>
+
+        {/* 历史版本记录摘要 */}
+        <div className="border-t border-border pt-3 flex flex-col gap-2">
+          <div className="text-[10px] text-muted uppercase tracking-wider flex items-center justify-between">
+            <span>最近快照链</span>
+            <span className="text-[10px] text-muted">{historyLedger.length} 个版本</span>
           </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleCopySource}
-              className="flex items-center gap-1 text-[11px] text-muted hover:text-main px-2.5 py-1 rounded border border-border hover:bg-surface transition-colors"
-              title="复制完整 HTML 源码至剪贴板"
-            >
-              {copiedCode ? (
-                <Check className="w-3.5 h-3.5 text-status-success" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-              <span>{copiedCode ? '已复制' : '复制源码'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadSource}
-              className="flex items-center gap-1 text-[11px] text-status-info hover:text-status-info px-2.5 py-1 rounded border border-status-info-border bg-status-info-bg hover:bg-status-info-bg transition-colors"
-              title="将 HTML 源文件下载至本地"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>下载文件</span>
-            </button>
+          <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto pr-0.5">
+            {historyLedger.slice(0, 5).map((h) => {
+              const isHead = h.revision === artifact.meta.currentRevision;
+              return (
+                <div
+                  key={h.revision}
+                  className={`flex items-center justify-between p-2 rounded border border-border text-[11px] ${
+                    isHead ? 'bg-surface-subtle text-main' : 'bg-transparent text-muted'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`font-bold shrink-0 ${isHead ? 'text-status-info' : 'text-muted'}`}
+                    >
+                      REV:{h.revision}
+                    </span>
+                    <span className="truncate max-w-[190px] text-main">{h.message}</span>
+                  </div>
+                  <span className="text-[10px] text-muted shrink-0">
+                    {isHead ? 'HEAD' : new Date(h.timestamp).toLocaleDateString()}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* 固定的底部危险操作栏 (Footer) */}
-      <footer className="h-13 bg-background/95 border-t border-border px-4 md:px-5 flex justify-between items-center shrink-0 font-mono text-xs">
-        <span className="text-[11px] text-muted">销毁此工件？</span>
+      {/* 抽屉底部安全销毁区 */}
+      <footer className="h-12 border-t border-border px-5 flex items-center justify-between bg-surface shrink-0 text-xs">
+        <span className="text-muted text-[11px]">物理文件同步受保护</span>
         <button
           type="button"
           onClick={handleDeleteArtifact}
-          className="flex items-center gap-1.5 text-status-error hover:text-status-error border border-status-error-border hover:bg-status-error-bg px-3 py-1.5 rounded transition-colors text-xs"
+          className="text-status-error hover:opacity-80 flex items-center gap-1.5 transition-colors font-medium cursor-pointer"
         >
           <Trash2 className="w-3.5 h-3.5" />
-          <span>销毁标本工件</span>
+          <span>移至废纸篓</span>
         </button>
       </footer>
     </aside>

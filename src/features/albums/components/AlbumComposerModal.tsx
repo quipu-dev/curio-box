@@ -112,7 +112,7 @@ export const AlbumComposerModal: React.FC<AlbumComposerModalProps> = ({
               <button
                 type="button"
                 onClick={() => setType('manual')}
-                className={`p-3 rounded-lg border text-left flex flex-col gap-1 transition-all ${
+                className={`p-3 rounded-lg border border-border text-left flex flex-col gap-1 transition-all ${
                   type === 'manual'
                     ? 'border-sky-500 bg-status-info-bg text-main shadow-sm'
                     : 'border-border bg-background hover:bg-surface-subtle text-muted'
@@ -130,7 +130,7 @@ export const AlbumComposerModal: React.FC<AlbumComposerModalProps> = ({
               <button
                 type="button"
                 onClick={() => setType('smart')}
-                className={`p-3 rounded-lg border text-left flex flex-col gap-1 transition-all ${
+                className={`p-3 rounded-lg border border-border text-left flex flex-col gap-1 transition-all ${
                   type === 'smart'
                     ? 'border-sky-500 bg-status-info-bg text-main shadow-sm'
                     : 'border-border bg-background hover:bg-surface-subtle text-muted'

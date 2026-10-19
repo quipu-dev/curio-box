@@ -58,23 +58,23 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg-color: #09090b;
-  --surface-color: #18181b;
-  --surface-elevated: #27272a;
-  --surface-subtle: #121215;
+  --bg-color: #0b0b0e;
+  --surface-color: #121215;
+  --surface-elevated: #1a1a20;
+  --surface-subtle: #16161a;
   --surface-overlay: rgba(0, 0, 0, 0.85);
 
-  --text-main: #fafafa;
-  --text-muted: #a1a1aa;
+  --text-main: #e4e4e7;
+  --text-muted: #9ca3af;
   --text-inverse: #09090b;
 
-  --border-color: #27272a;
-  --border-subtle: #1f1f23;
-  --border-strong: #3f3f46;
+  --border-color: #202028;
+  --border-subtle: #181820;
+  --border-strong: #323240;
 
-  --accent-color: #ffffff;
+  --accent-color: #f4f4f5;
   --accent-text: #09090b;
-  --tag-bg: #27272a;
+  --tag-bg: #1e1e24;
 
   --code-bg: #000000;
   --code-text: #d4d4d8;

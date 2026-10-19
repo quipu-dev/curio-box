@@ -198,7 +198,7 @@ export const DarkroomStudioHeader: React.FC<DarkroomStudioHeaderProps> = ({
       <div className="flex items-center gap-2.5">
         {assetStats && assetStats.total > 0 && (
           <div
-            className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded border text-[11px] ${
+            className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded border border-border text-[11px] ${
               assetStats.cached === assetStats.total
                 ? 'border-status-success-border bg-status-success-bg text-status-success'
                 : 'border-status-warn-border bg-status-warn-bg text-status-warn'

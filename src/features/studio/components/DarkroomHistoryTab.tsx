@@ -72,7 +72,7 @@ export const DarkroomHistoryTab: React.FC<DarkroomHistoryTabProps> = ({
                       </span>
                     )}
                     {isPhysicalHead && (
-                      <span className="text-[10px] bg-zinc-800 text-zinc-300 border border-zinc-700 px-1.5 py-0.2 rounded">
+                      <span className="text-[10px] bg-surface-subtle text-main border border-border px-1.5 py-0.2 rounded">
                         HEAD
                       </span>
                     )}
@@ -90,7 +90,7 @@ export const DarkroomHistoryTab: React.FC<DarkroomHistoryTabProps> = ({
                       className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors border ${
                         viewingRevision === item.revision
                           ? 'bg-status-warn-bg text-status-warn border-status-warn-border'
-                          : 'border-border text-muted hover:text-main hover:bg-border'
+                          : 'border-border text-muted hover:text-main hover:bg-surface-subtle'
                       }`}
                       title="在沙箱中只读预览该版本"
                     >
@@ -102,7 +102,7 @@ export const DarkroomHistoryTab: React.FC<DarkroomHistoryTabProps> = ({
                       <button
                         type="button"
                         onClick={() => onRestoreRevision(item.revision)}
-                        className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-border text-[11px] text-main"
+                        className="flex items-center gap-1 border border-border px-2 py-1 rounded hover:bg-surface-subtle text-[11px] text-main"
                         title={`基于 REV:${item.revision} 跃迁生成新 Revision`}
                       >
                         <Undo2 className="w-3 h-3 text-status-warn" />
@@ -113,7 +113,7 @@ export const DarkroomHistoryTab: React.FC<DarkroomHistoryTabProps> = ({
                 </div>
 
                 {/* Commit 提交日志说明与时间 */}
-                <div className="flex flex-col gap-1 text-[11px] font-sans bg-surface/60 p-2 rounded border border-border/60">
+                <div className="flex flex-col gap-1 text-[11px] font-sans bg-surface p-2 rounded border border-border">
                   <div className="flex items-start gap-1 text-main leading-relaxed select-text">
                     <GitCommit className="w-3.5 h-3.5 text-status-info shrink-0 mt-0.5" />
                     <span className="break-words font-medium">

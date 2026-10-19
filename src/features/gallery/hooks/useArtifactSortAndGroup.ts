@@ -75,24 +75,46 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
   const [filterNeedsPoster, setFilterNeedsPoster] = useState<boolean>(false);
   // 未分类（待归档打标）过滤状态
   const [filterUnclassified, setFilterUnclassified] = useState<boolean>(false);
+  // 高分标本（>=4星）过滤状态
+  const [filterHighScore, setFilterHighScore] = useState<boolean>(false);
 
   // 统计当前全局缺失海报封面的工件数
   const needsPosterCount = useMemo(() => {
-    return artifacts.filter((a) => !a.posterBlobUrl).length;
+    let count = 0;
+    for (const a of artifacts) {
+      if (!a.posterBlobUrl) count++;
+    }
+    return count;
   }, [artifacts]);
 
   // 统计当前全局未分类的工件数
   const unclassifiedCount = useMemo(() => {
-    return artifacts.filter((a) => isArtifactUnclassified(a.meta.tags)).length;
+    let count = 0;
+    for (const a of artifacts) {
+      if (isArtifactUnclassified(a.meta.tags)) count++;
+    }
+    return count;
   }, [artifacts]);
 
-  // 1. 过滤匹配（同时支持标签搜索、名称/描述全文检索、待定格与未分类状态筛选叠加）
+  // 统计高分工件数 (>=4星)
+  const highScoreCount = useMemo(() => {
+    let count = 0;
+    for (const a of artifacts) {
+      if ((a.meta.rating || 0) >= 4) count++;
+    }
+    return count;
+  }, [artifacts]);
+
+  // 1. 过滤匹配（同时支持标签搜索、名称/描述全文检索、快捷胶囊状态筛选叠加）
   const filteredArtifacts = useMemo(() => {
     return artifacts.filter((item) => {
       if (filterNeedsPoster && item.posterBlobUrl) {
         return false;
       }
       if (filterUnclassified && !isArtifactUnclassified(item.meta.tags)) {
+        return false;
+      }
+      if (filterHighScore && (item.meta.rating || 0) < 4) {
         return false;
       }
 
@@ -108,7 +130,7 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
       const descMatched = Boolean(item.meta.description?.toLowerCase().includes(query));
       return nameMatched || descMatched;
     });
-  }, [artifacts, searchQuery, filterNeedsPoster, filterUnclassified]);
+  }, [artifacts, searchQuery, filterNeedsPoster, filterUnclassified, filterHighScore]);
 
   // 2. 依据当前排序选项进行确定性排序
   const sortedArtifacts = useMemo(() => {
@@ -228,6 +250,9 @@ export function useArtifactSortAndGroup(artifacts: Artifact[], searchQuery: stri
     filterUnclassified,
     setFilterUnclassified,
     unclassifiedCount,
+    filterHighScore,
+    setFilterHighScore,
+    highScoreCount,
     filteredArtifacts,
     sortedArtifacts,
     displayGroups,

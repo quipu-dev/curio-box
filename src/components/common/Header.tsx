@@ -1,7 +1,17 @@
 import { TagAutocompleteInput } from '@/components/common/TagAutocompleteInput';
-import type { CardSize } from '@/features/gallery/hooks/useArtifactSortAndGroup';
-import { BookOpen, Clipboard, FolderOpen, Layers, LayoutGrid, Moon, Plus, Sun } from 'lucide-react';
+import {
+  BookOpen,
+  ChevronDown,
+  Clipboard,
+  FolderOpen,
+  LayoutGrid,
+  Moon,
+  Plus,
+  Search,
+  Sun,
+} from 'lucide-react';
 import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface HeaderProps {
   currentView: 'specimens' | 'albums';
@@ -18,8 +28,6 @@ interface HeaderProps {
   resolvedTheme: 'dark' | 'light';
   onToggleTheme: () => void;
   allTags?: string[];
-  cardSize: CardSize;
-  onCardSizeChange: (size: CardSize) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,178 +45,220 @@ export const Header: React.FC<HeaderProps> = ({
   resolvedTheme,
   onToggleTheme,
   allTags,
-  cardSize = 'md',
-  onCardSizeChange,
 }) => {
+  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 绑定全局 ⌘K / Ctrl+K 聚焦搜索框
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        const input = document.getElementById('global-search-input') as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  // 外部点击收起新建菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsCreateMenuOpen(false);
+      }
+    };
+    if (isCreateMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isCreateMenuOpen]);
+
+  const handleDirectoryAction = () => {
+    if (pendingDirectoryName && !hasDirectory && onRequestPendingPermission) {
+      onRequestPendingPermission();
+    } else {
+      onPickDirectory();
+    }
+  };
+
   return (
-    <header className="sticky top-0 z-30 bg-surface border-b border-border px-6 py-3.5 flex flex-wrap gap-4 justify-between items-center shadow-sm font-mono">
-      <div className="flex items-center gap-4">
-        <div className="font-bold text-lg tracking-tight font-sans">
-          curio-box{' '}
-          <span className="text-muted font-normal text-xs font-mono">{'// 视觉工件画廊'}</span>
+    <header className="h-14 border-b border-border bg-surface px-5 flex items-center justify-between shrink-0 gap-4 z-20">
+      <div className="flex items-center gap-6">
+        <div className="font-bold tracking-tight text-sm font-sans flex items-center gap-2">
+          <span>curio-box</span>
+          <span className="text-[10px] text-muted font-mono font-normal hidden sm:inline">
+            {'// 视觉工件画廊'}
+          </span>
         </div>
 
-        {/* 双轨大盘视图分段器 */}
-        <div className="flex items-center bg-background border border-border rounded-lg p-0.5 text-xs">
+        {/* 双轨大盘分段器 */}
+        <nav
+          aria-label="视图模式切换"
+          className="flex items-center bg-background border border-border p-0.5 rounded-lg text-xs font-medium"
+        >
           <button
             type="button"
             onClick={() => onSwitchView('specimens')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded transition-colors ${
+            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
               currentView === 'specimens'
-                ? 'bg-accent text-accent-text font-semibold shadow-sm'
+                ? 'bg-surface-elevated text-status-info font-semibold shadow-sm'
                 : 'text-muted hover:text-main'
             }`}
             title="查看全部标本工件流"
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>标本大盘</span>
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>标本工件</span>
           </button>
-
           <button
             type="button"
             onClick={() => onSwitchView('albums')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded transition-colors ${
+            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
               currentView === 'albums'
-                ? 'bg-accent text-accent-text font-semibold shadow-sm'
+                ? 'bg-surface-elevated text-status-info font-semibold shadow-sm'
                 : 'text-muted hover:text-main'
             }`}
-            title="查看精选策展画册与智能专辑"
+            title="查看精选策展画册"
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>策展画册</span>
           </button>
-        </div>
+        </nav>
       </div>
 
-      {/* 搜索栏（画册模式下切换占位提示） */}
-      <div className="flex-1 max-w-xl mx-auto w-full">
-        <div className="flex items-center bg-background border border-border px-2 py-1 rounded text-sm">
+      {/* 居中聚合搜索框 */}
+      <div className="flex-1 max-w-lg mx-2">
+        <div className="relative flex items-center">
+          <Search className="w-4 h-4 text-muted absolute left-3 pointer-events-none" />
           <TagAutocompleteInput
+            id="global-search-input"
             value={searchQuery}
             onChange={onSearchChange}
             allTags={allTags || []}
             placeholder={
               currentView === 'albums'
-                ? '检索画册标题、简介或智能标签...'
-                : '标签检索：形态:webgl 物理:流体 -风格:粗野'
+                ? '按标题、简介或智能标签检索画册...'
+                : '按名称、备忘或规则检索（如：形态:webgl 物理:流体）...'
             }
-            className="w-full bg-transparent border-0 outline-none text-main font-mono text-xs placeholder:text-muted px-1 py-1"
+            className="w-full bg-background border border-border rounded-lg pl-9 pr-16 py-1.5 text-xs text-main placeholder:text-muted focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/50 transition-all font-mono"
           />
+          <div className="absolute right-2.5 flex items-center pointer-events-none">
+            <span className="text-[10px] text-muted font-mono bg-surface-subtle px-1.5 py-0.5 rounded border border-border">
+              ⌘K
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* 右侧操作簇 */}
+      <div className="flex items-center gap-3">
+        {/* 本地物理工作区目录胶囊 */}
+        <button
+          type="button"
+          onClick={handleDirectoryAction}
+          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-surface-subtle hover:bg-surface-elevated text-xs transition-colors cursor-pointer"
+          title={
+            pendingDirectoryName && !hasDirectory
+              ? `点击恢复访问授权: ${pendingDirectoryName}`
+              : hasDirectory
+                ? '已连接物理工作区，点击切换'
+                : '点击关联本地工作区目录'
+          }
+        >
+          <FolderOpen
+            className={`w-3.5 h-3.5 ${
+              pendingDirectoryName && !hasDirectory
+                ? 'text-status-warn'
+                : hasDirectory
+                  ? 'text-status-success'
+                  : 'text-muted'
+            }`}
+          />
+          <span className="text-main font-mono text-[11px] truncate max-w-[150px]">
+            {pendingDirectoryName && !hasDirectory
+              ? `待授权: ${pendingDirectoryName}`
+              : hasDirectory
+                ? '物理工作区已关联'
+                : '关联本地目录'}
+          </span>
+        </button>
+
+        {/* 组合导入与创建主按钮（统一胶囊容器彻底杜绝断开） */}
         {currentView === 'albums' ? (
           <button
             type="button"
             onClick={onOpenNewAlbumComposer}
-            className="flex items-center gap-1.5 bg-main text-surface px-3 py-1.5 text-xs font-medium hover:opacity-90 transition-opacity rounded"
-            title="新建策展画册或智能专辑"
+            className="bg-zinc-100 hover:bg-white text-black font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm"
+            title="新建策展画册"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>新建画册</span>
           </button>
         ) : (
-          <>
-            <button
-              type="button"
-              onClick={onOpenNewArtifactComposer}
-              className="flex items-center gap-1.5 bg-main text-surface px-3 py-1.5 text-xs font-medium hover:opacity-90 transition-opacity rounded"
-              title="创建新工件"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>新建工件</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onImportFromClipboard}
-              className="flex items-center gap-1.5 border border-border px-3 py-1.5 text-xs hover:bg-border transition-colors rounded text-muted hover:text-main"
-              title="从剪贴板读取代码并导入"
-            >
-              <Clipboard className="w-3.5 h-3.5 text-status-info" />
-              <span className="hidden md:inline">剪贴板导入</span>
-            </button>
-          </>
-        )}
-
-        {/* 待重新授权提示 */}
-        {pendingDirectoryName && !hasDirectory && onRequestPendingPermission && (
-          <button
-            type="button"
-            onClick={onRequestPendingPermission}
-            className="flex items-center gap-1.5 bg-status-info-bg border border-status-info-border text-status-info px-3 py-1.5 text-xs hover:bg-status-info-bg transition-colors rounded animate-pulse"
-            title="点击恢复上次目录的访问授权"
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-            <span>恢复目录: {pendingDirectoryName}</span>
-          </button>
-        )}
-
-        {/* 标本大盘模式下保留网格尺寸切换 */}
-        {currentView === 'specimens' && (
-          <div className="hidden sm:flex items-center border border-border rounded overflow-hidden p-0.5 bg-background">
-            <div className="px-1.5 text-muted flex items-center" title="调整卡片呈现尺寸">
-              <LayoutGrid className="w-3.5 h-3.5" />
+          <div ref={dropdownRef} className="relative flex items-center rounded-lg shadow-sm">
+            <div className="flex items-center bg-zinc-100 hover:bg-white text-black rounded-lg overflow-hidden border border-zinc-200 transition-colors">
+              <button
+                type="button"
+                onClick={onImportFromClipboard}
+                className="font-semibold px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer outline-none transition-colors hover:bg-black/5"
+                title="直接从剪贴板读取 HTML 或脚本并导入"
+              >
+                <Clipboard className="w-3.5 h-3.5 text-sky-600" />
+                <span className="text-zinc-900 font-bold">剪贴板导入</span>
+              </button>
+              <div className="w-[1px] h-3.5 bg-zinc-300 shrink-0" />
+              <button
+                type="button"
+                onClick={() => setIsCreateMenuOpen((prev) => !prev)}
+                className="px-1.5 py-1.5 cursor-pointer outline-none text-zinc-700 hover:text-black hover:bg-black/5 transition-colors flex items-center justify-center"
+                title="展开更多创建模式"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onCardSizeChange('sm')}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                cardSize === 'sm'
-                  ? 'bg-accent text-accent-text font-semibold'
-                  : 'text-muted hover:text-main'
-              }`}
-              title="紧凑模式"
-            >
-              紧凑
-            </button>
-            <button
-              type="button"
-              onClick={() => onCardSizeChange('md')}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                cardSize === 'md'
-                  ? 'bg-accent text-accent-text font-semibold'
-                  : 'text-muted hover:text-main'
-              }`}
-              title="标准模式"
-            >
-              标准
-            </button>
-            <button
-              type="button"
-              onClick={() => onCardSizeChange('lg')}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                cardSize === 'lg'
-                  ? 'bg-accent text-accent-text font-semibold'
-                  : 'text-muted hover:text-main'
-              }`}
-              title="巨幕模式"
-            >
-              巨幕
-            </button>
+
+            {isCreateMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-48 bg-surface border border-border rounded-lg shadow-2xl p-1 z-30 font-mono text-xs animate-in fade-in zoom-in-95">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateMenuOpen(false);
+                    onOpenNewArtifactComposer();
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-surface-subtle text-main flex items-center gap-2"
+                >
+                  <Plus className="w-3.5 h-3.5 text-status-success" />
+                  <span>新建空白工件</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateMenuOpen(false);
+                    onImportFromClipboard();
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-surface-subtle text-main flex items-center gap-2"
+                >
+                  <Clipboard className="w-3.5 h-3.5 text-status-info" />
+                  <span>从剪贴板导入</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={onPickDirectory}
-          className="flex items-center gap-1.5 border border-border px-3 py-1.5 text-xs hover:bg-border transition-colors rounded"
-        >
-          <FolderOpen className="w-3.5 h-3.5 text-muted" />
-          <span className="hidden sm:inline">{hasDirectory ? '切换目录' : '关联目录'}</span>
-        </button>
-
+        {/* 辅助外观主题切换 */}
         <button
           type="button"
           onClick={onToggleTheme}
-          className="border border-border p-2 text-xs hover:bg-border transition-colors rounded text-muted hover:text-main"
+          className="p-2 border border-border text-muted hover:text-main hover:bg-surface-elevated rounded-lg transition-colors"
           title={resolvedTheme === 'dark' ? '切换至浅色模式' : '切换至深色模式'}
         >
           {resolvedTheme === 'dark' ? (
-            <Sun className="w-3.5 h-3.5 text-status-warn" />
+            <Sun className="w-4 h-4 text-status-warn" />
           ) : (
-            <Moon className="w-3.5 h-3.5 text-sky-600" />
+            <Moon className="w-4 h-4 text-sky-600" />
           )}
         </button>
       </div>

@@ -228,10 +228,10 @@ export const AlbumMetaEditor: React.FC<AlbumMetaEditorProps> = ({
       )}
 
       {album.type === 'smart' && (
-        <div className="text-[11px] font-mono bg-background px-3 py-1.5 rounded border border-border text-zinc-300 flex items-center gap-2">
+        <div className="text-[11px] font-mono bg-background px-3 py-1.5 rounded border border-border text-main flex items-center gap-2">
           <span className="text-muted">规则:</span>
           <span className="text-status-info font-medium">{album.query || '（全部）'}</span>
-          <span className="text-border">|</span>
+          <span className="text-muted">|</span>
           <span className="text-muted">排序:</span>
           <span>{album.sortBy || 'rating-desc'}</span>
         </div>

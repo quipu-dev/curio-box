@@ -245,7 +245,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
         {/* 主编辑与预览区域 */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* 左侧代码编辑区 */}
-          <div className="flex-1 flex flex-col bg-code text-zinc-300 overflow-hidden border-b md:border-b-0 md:border-r border-border">
+          <div className="flex-1 flex flex-col bg-code text-main overflow-hidden border-b md:border-b-0 md:border-r border-border">
             <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex justify-between items-center text-[11px] font-mono text-zinc-400 shrink-0">
               <span className="flex items-center gap-1.5">
                 <Code2 className="w-3.5 h-3.5 text-status-info" />
@@ -276,7 +276,7 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
                 onKeyDown={handleKeyDown}
                 spellCheck={false}
                 placeholder="在此粘贴或编写工件 HTML 完整代码..."
-                className="flex-1 bg-transparent p-3 font-mono text-xs text-zinc-200 outline-none resize-none leading-relaxed overflow-y-auto selection:bg-sky-500/30"
+                className="flex-1 bg-transparent p-3 font-mono text-xs text-main outline-none resize-none leading-relaxed overflow-y-auto selection:bg-sky-500/30"
               />
             </div>
           </div>

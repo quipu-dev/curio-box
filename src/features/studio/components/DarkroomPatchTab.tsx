@@ -34,7 +34,7 @@ export const DarkroomPatchTab: React.FC<DarkroomPatchTabProps> = ({
             <Eye className="w-4 h-4 text-status-warn shrink-0" />
             <span>当前正在检视历史版本 REV:{viewingRevision}</span>
           </div>
-          <p className="text-[11px] text-zinc-300 leading-relaxed">
+          <p className="text-[11px] text-main leading-relaxed">
             为防止代码冲突，检视历史版本时补丁功能已锁定。您可以基于此版本继续修改，或返回最新版本。
           </p>
           <div className="flex gap-2 mt-1">
@@ -127,7 +127,7 @@ set_description
 \`\`\`
 优秀的流体仿真标本，适宜全屏交互。
 \`\`\``}
-        className="flex-1 min-h-[300px] w-full bg-code text-zinc-300 border border-border p-3.5 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
+        className="flex-1 min-h-[300px] w-full bg-code text-main border border-border p-3.5 font-mono text-[11px] rounded outline-none resize-none leading-relaxed"
       />
 
       <div className="flex flex-col gap-2">

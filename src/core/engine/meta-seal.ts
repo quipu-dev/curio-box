@@ -1,7 +1,6 @@
 import type { ArtifactBundleMeta } from '@/types';
 
 export interface ExtractedMeta {
-  name?: string;
   tags?: string[];
   description?: string;
   rating?: number;
@@ -27,10 +26,6 @@ export const MetaSealEngine = {
         const parsed = JSON.parse(rawContent);
         if (parsed && typeof parsed === 'object') {
           const result: ExtractedMeta = {};
-
-          if (typeof parsed.name === 'string') {
-            result.name = parsed.name.trim();
-          }
 
           if (Array.isArray(parsed.tags)) {
             result.tags = parsed.tags.map((t: unknown) => String(t).trim()).filter(Boolean);
@@ -64,20 +59,15 @@ export const MetaSealEngine = {
   },
 
   /**
-   * 将元数据格式化为标准扁平 JSON 符印注释块
+   * 将元数据格式化为标准扁平 JSON 符印注释块（不包含 name，文件名是名称的唯一事实来源）
    */
   buildSealBlock(meta: {
-    name?: string;
     tags?: string[];
     description?: string;
     rating?: number;
     currentRevision?: number;
   }): string {
     const payload: Record<string, unknown> = {};
-
-    if (meta.name?.trim()) {
-      payload.name = meta.name.trim();
-    }
 
     if (meta.tags && meta.tags.length > 0) {
       payload.tags = meta.tags;
@@ -104,9 +94,7 @@ export const MetaSealEngine = {
    */
   inject(
     html: string,
-    meta: Partial<
-      Pick<ArtifactBundleMeta, 'name' | 'tags' | 'description' | 'rating' | 'currentRevision'>
-    >,
+    meta: Partial<Pick<ArtifactBundleMeta, 'tags' | 'description' | 'rating' | 'currentRevision'>>,
   ): string {
     const cleanHtml = this.strip(html).trimStart();
     const seal = this.buildSealBlock(meta);

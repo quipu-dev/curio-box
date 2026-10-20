@@ -39,10 +39,9 @@ describe('ArtifactRepository 自愈与工作区对齐机制 (Reconcile)', () => 
     expect(await root.readFile(snapPath)).toBe(rawExternalHtml);
   });
 
-  it('自愈并继承既有符印：外部丢入的 HTML 若自带符印，继承其名称、标签与评分', async () => {
+  it('自愈并继承既有符印：标签与评分完美继承，名称绝对遵循物理文件名', async () => {
     const stampedHtml = `<!--@curio
 {
-  "name": "带符印的外部工件",
   "tags": ["形态:webgl", "领域:流体"],
   "rating": 5
 }
@@ -50,13 +49,15 @@ describe('ArtifactRepository 自愈与工作区对齐机制 (Reconcile)', () => 
 <!DOCTYPE html>
 <html><body><div>Ready</div></body></html>`;
 
-    await root.addFile('stamped.html', stampedHtml);
+    await root.addFile('stamped-shader.html', stampedHtml);
 
     const artifacts = await repo.reconcileWorkspace();
     expect(artifacts.length).toBe(1);
 
     const art = artifacts[0];
-    expect(art.meta.name).toBe('带符印的外部工件');
+    // 物理文件名是唯一事实来源，不再受符印干扰
+    expect(art.meta.filename).toBe('stamped-shader.html');
+    expect(art.meta.name).toBe('stamped-shader');
     expect(art.meta.tags).toEqual(['形态:webgl', '领域:流体']);
     expect(art.meta.rating).toBe(5);
   });

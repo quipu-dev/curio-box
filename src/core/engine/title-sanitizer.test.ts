@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 describe('TitleSanitizerEngine', () => {
   describe('extractTitle', () => {
     it('优先从 <title> 标签中提取标题', () => {
-      const html = '<html><head><title>三维流体仿真</title></head><body><h1>标题一</h1></body></html>';
+      const html =
+        '<html><head><title>三维流体仿真</title></head><body><h1>标题一</h1></body></html>';
       expect(TitleSanitizerEngine.extractTitle(html)).toBe('三维流体仿真');
     });
 

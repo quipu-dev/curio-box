@@ -123,8 +123,7 @@ export class ArtifactRepository {
           const extracted = MetaSealEngine.extract(headChunk);
 
           const content = await file.text();
-          const defaultName = htmlName.replace(/\.html$/, '');
-          const finalName = extracted?.name || defaultName;
+          const finalName = htmlName.replace(/\.html$/, '');
           const finalTags =
             extracted?.tags && extracted.tags.length > 0
               ? extracted.tags

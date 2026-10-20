@@ -6,9 +6,24 @@ export class MemoryFileHandle implements FileSystemFileHandle {
   public content: string;
   public lastModified: number;
 
-  constructor(public readonly name: string, initialContent = '') {
+  constructor(
+    public readonly name: string,
+    initialContent = '',
+  ) {
     this.content = initialContent;
     this.lastModified = Date.now();
+  }
+
+  async isSameEntry(other: FileSystemHandle): Promise<boolean> {
+    return this === other;
+  }
+
+  async queryPermission(): Promise<PermissionState> {
+    return 'granted';
+  }
+
+  async requestPermission(): Promise<PermissionState> {
+    return 'granted';
   }
 
   async getFile(): Promise<File> {
@@ -19,7 +34,6 @@ export class MemoryFileHandle implements FileSystemFileHandle {
       type: 'text/html',
     });
 
-    // 确保与部分 Node 环境下的 slice 与 text 方法兼具
     if (typeof file.text !== 'function') {
       (file as unknown as { text: () => Promise<string> }).text = async () => content;
     }
@@ -55,20 +69,47 @@ export class MemoryFileHandle implements FileSystemFileHandle {
 
 /**
  * 内存虚拟目录句柄：模拟 FileSystemDirectoryHandle 行为
- * 包含递归目录查找、流式创建、异步迭代器与便捷调试测试工具
  */
 export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
   readonly kind = 'directory' as const;
-  private entries = new Map<string, MemoryFileHandle | MemoryDirectoryHandle>();
+  private entriesMap = new Map<string, MemoryFileHandle | MemoryDirectoryHandle>();
 
   constructor(public readonly name: string) {}
 
+  async isSameEntry(other: FileSystemHandle): Promise<boolean> {
+    return this === other;
+  }
+
+  async queryPermission(): Promise<PermissionState> {
+    return 'granted';
+  }
+
+  async requestPermission(): Promise<PermissionState> {
+    return 'granted';
+  }
+
+  async resolve(possibleDescendant: FileSystemHandle): Promise<string[] | null> {
+    if (this === possibleDescendant) return [];
+    for (const [name, entry] of this.entriesMap.entries()) {
+      if (entry === possibleDescendant) {
+        return [name];
+      }
+      if (entry.kind === 'directory') {
+        const sub = await (entry as MemoryDirectoryHandle).resolve(possibleDescendant);
+        if (sub) {
+          return [name, ...sub];
+        }
+      }
+    }
+    return null;
+  }
+
   async getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandle> {
-    let entry = this.entries.get(name);
+    let entry = this.entriesMap.get(name);
     if (!entry) {
       if (options?.create) {
         entry = new MemoryFileHandle(name);
-        this.entries.set(name, entry);
+        this.entriesMap.set(name, entry);
       } else {
         const err = new Error(`File not found: ${name}`);
         err.name = 'NotFoundError';
@@ -85,11 +126,11 @@ export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
     name: string,
     options?: { create?: boolean },
   ): Promise<FileSystemDirectoryHandle> {
-    let entry = this.entries.get(name);
+    let entry = this.entriesMap.get(name);
     if (!entry) {
       if (options?.create) {
         entry = new MemoryDirectoryHandle(name);
-        this.entries.set(name, entry);
+        this.entriesMap.set(name, entry);
       } else {
         const err = new Error(`Directory not found: ${name}`);
         err.name = 'NotFoundError';
@@ -103,16 +144,16 @@ export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
   }
 
   async removeEntry(name: string, _options?: { recursive?: boolean }): Promise<void> {
-    if (!this.entries.has(name)) {
+    if (!this.entriesMap.has(name)) {
       const err = new Error(`Entry not found: ${name}`);
       err.name = 'NotFoundError';
       throw err;
     }
-    this.entries.delete(name);
+    this.entriesMap.delete(name);
   }
 
   values(): AsyncIterable<FileSystemHandle> {
-    const items = Array.from(this.entries.values());
+    const items = Array.from(this.entriesMap.values());
     return {
       [Symbol.asyncIterator]() {
         let index = 0;
@@ -128,11 +169,45 @@ export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
     };
   }
 
+  keys(): AsyncIterable<string> {
+    const keysList = Array.from(this.entriesMap.keys());
+    return {
+      [Symbol.asyncIterator]() {
+        let index = 0;
+        return {
+          async next() {
+            if (index < keysList.length) {
+              return { value: keysList[index++], done: false };
+            }
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    };
+  }
+
+  entries(): AsyncIterable<[string, FileSystemHandle]> {
+    const entriesList = Array.from(this.entriesMap.entries());
+    return {
+      [Symbol.asyncIterator]() {
+        let index = 0;
+        return {
+          async next() {
+            if (index < entriesList.length) {
+              return {
+                value: entriesList[index++] as [string, FileSystemHandle],
+                done: false,
+              };
+            }
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    };
+  }
+
   // --- 测试辅助方法 (Test Helpers) ---
 
-  /**
-   * 快捷添加深层嵌套文件，例如: root.addFile('.gallery/artifacts/art_1/meta.json', '{}')
-   */
   async addFile(relativePath: string, content = ''): Promise<MemoryFileHandle> {
     const parts = relativePath.split('/').filter(Boolean);
     const fileName = parts.pop();
@@ -152,9 +227,6 @@ export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
     return fileHandle;
   }
 
-  /**
-   * 快捷读取深层文件内容
-   */
   async readFile(relativePath: string): Promise<string> {
     const parts = relativePath.split('/').filter(Boolean);
     const fileName = parts.pop();
@@ -169,9 +241,6 @@ export class MemoryDirectoryHandle implements FileSystemDirectoryHandle {
     return fileHandle.content;
   }
 
-  /**
-   * 快捷检查深层文件是否存在
-   */
   async hasFile(relativePath: string): Promise<boolean> {
     try {
       await this.readFile(relativePath);

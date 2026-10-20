@@ -44,8 +44,8 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
   const initialSeal = useMemo(() => MetaSealEngine.extract(initialCode), [initialCode]);
 
   const [sourceCode, setSourceCode] = useState<string>(initialCode);
-  const [artifactName, setArtifactName] = useState<string>(
-    () => initialSeal?.name || TitleSanitizerEngine.extractTitle(initialCode),
+  const [artifactName, setArtifactName] = useState<string>(() =>
+    TitleSanitizerEngine.extractTitle(initialCode),
   );
   const [artifactDesc, setArtifactDesc] = useState<string>(() => initialSeal?.description || '');
   const [rawTagsInput, setRawTagsInput] = useState<string>(() => {

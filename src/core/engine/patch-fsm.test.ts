@@ -1,8 +1,4 @@
-import {
-  DarkroomApplier,
-  parsePatchCommands,
-  parseStateBlocks,
-} from '@/core/engine/patch-fsm';
+import { DarkroomApplier, parsePatchCommands, parseStateBlocks } from '@/core/engine/patch-fsm';
 import { describe, expect, it } from 'vitest';
 
 describe('PatchFSM & DarkroomApplier', () => {
@@ -88,7 +84,7 @@ set_description
   });
 
   describe('DarkroomApplier.apply', () => {
-    const baseCode = `function setup() {\n  const speed = 1.0;\n  return speed;\n}`;
+    const baseCode = 'function setup() {\n  const speed = 1.0;\n  return speed;\n}';
 
     it('patch_file：精准替换匹配代码行并保持换行格式', () => {
       const command = {
@@ -98,7 +94,7 @@ set_description
       };
 
       const result = DarkroomApplier.apply(baseCode, command);
-      expect(result).toBe(`function setup() {\n  const speed = 3.0;\n  return speed;\n}`);
+      expect(result).toBe('function setup() {\n  const speed = 3.0;\n  return speed;\n}');
     });
 
     it('patch_file 冲突防御：当 old_doc 在源码中不匹配时，立即抛出明确异常并阻断', () => {

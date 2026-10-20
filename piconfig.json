@@ -5,6 +5,11 @@
       "extension": ["js", "ts", "tsx", "json", "css", "html"],
       "paths": ["."],
       "ignore": ["*.test.ts", "*.test.tsx"]
+    },
+    "fullt": {
+      "format": "xml",
+      "extension": ["js", "ts", "tsx", "json", "css", "html"],
+      "paths": ["."]
     }
   }
 }

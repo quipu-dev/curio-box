@@ -52,6 +52,7 @@ function MainApp() {
     existingFilenames,
     allKnownTags,
     albumViews,
+    workspaceMeta,
     handlePickDirectory,
     handleRequestPendingPermission,
     handleSaveComposerArtifact,
@@ -64,6 +65,7 @@ function MainApp() {
     handleCreateAlbum,
     handleSaveAlbum,
     handleDeleteAlbum,
+    handleUpdateWorkspaceMeta,
   } = useWorkspaceSync(activeAlbumId);
 
   const isAlbumsView =
@@ -503,6 +505,7 @@ function MainApp() {
 
       {/* 系统全局首选项设置弹窗 */}
       <SettingsModal
+        key={isSettingsOpen ? workspaceMeta?.id || 'open' : 'closed'}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         hasDirectory={hasDirectory}
@@ -510,6 +513,8 @@ function MainApp() {
         pendingDirectoryName={pendingHandle?.name}
         onPickDirectory={handlePickDirectory}
         onRequestPendingPermission={handleRequestPendingPermission}
+        workspaceMeta={workspaceMeta}
+        onUpdateWorkspace={handleUpdateWorkspaceMeta}
       />
     </div>
   );

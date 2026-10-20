@@ -1,12 +1,14 @@
 import { AlbumRepository } from '@/core/storage/album-repository';
 import { ArtifactRepository } from '@/core/storage/artifact-repository';
 import { loadHandleFromIDB, persistHandleToIDB } from '@/core/storage/idb';
+import { WorkspaceRepository } from '@/core/storage/workspace-repository';
 import type {
   AlbumMeta,
   Artifact,
   ArtifactBundleMeta,
   CommitLogEntry,
   CreateAlbumInput,
+  WorkspaceMeta,
 } from '@/types';
 
 /**
@@ -17,11 +19,13 @@ export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
   public readonly artifacts = new ArtifactRepository();
   public readonly albums = new AlbumRepository();
+  public readonly workspace = new WorkspaceRepository();
 
   public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
     this.dirHandle = handle;
     this.artifacts.setDirectoryHandle(handle);
     this.albums.setDirectoryHandle(handle);
+    this.workspace.setDirectoryHandle(handle);
     persistHandleToIDB(handle).catch(() => {});
   }
 
@@ -187,6 +191,15 @@ export class GalleryStorage {
 
   public getMockAlbums(): AlbumMeta[] {
     return this.albums.getMockAlbums();
+  }
+
+  // --- 工作区仓储委托 ---
+  public loadWorkspaceMeta(fallbackDirName?: string): Promise<WorkspaceMeta> {
+    return this.workspace.loadWorkspaceMeta(fallbackDirName);
+  }
+
+  public saveWorkspaceMeta(meta: WorkspaceMeta): Promise<void> {
+    return this.workspace.saveWorkspaceMeta(meta);
   }
 }
 

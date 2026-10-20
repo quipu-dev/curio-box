@@ -1,7 +1,7 @@
 import { useToast } from '@/context/ToastContext';
 import { galleryStorage } from '@/core/storage/fs-storage';
 import { buildAlbumView, resolveAlbumArtifacts } from '@/features/albums/album-resolver';
-import type { Album, AlbumMeta, Artifact } from '@/types';
+import type { Album, AlbumMeta, Artifact, UpdateWorkspaceInput, WorkspaceMeta } from '@/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface WindowWithFSA extends Window {
@@ -12,6 +12,7 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
   const { toast } = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [albums, setAlbums] = useState<AlbumMeta[]>([]);
+  const [workspaceMeta, setWorkspaceMeta] = useState<WorkspaceMeta | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
@@ -26,9 +27,10 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
    * SWR 两段式工作区对齐
    */
   const loadArtifactsSWR = useCallback(async () => {
-    const [projectedArtifacts, projectedAlbums] = await Promise.all([
+    const [projectedArtifacts, projectedAlbums, loadedWorkspace] = await Promise.all([
       galleryStorage.loadProjectedArtifacts(),
       galleryStorage.loadProjectedAlbums(),
+      galleryStorage.loadWorkspaceMeta(galleryStorage.getDirectoryHandle()?.name),
     ]);
 
     if (projectedArtifacts.length > 0) {
@@ -36,6 +38,9 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     }
     if (projectedAlbums.length > 0) {
       setAlbums(projectedAlbums);
+    }
+    if (loadedWorkspace) {
+      setWorkspaceMeta(loadedWorkspace);
     }
 
     galleryStorage.reconcileWorkspace(({ type, artifacts: latest }) => {
@@ -266,9 +271,21 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     setAlbums((prev) => prev.filter((a) => a.id !== albumId));
   };
 
+  const handleUpdateWorkspaceMeta = async (input: UpdateWorkspaceInput) => {
+    if (!workspaceMeta) return;
+    const nextMeta: WorkspaceMeta = {
+      ...workspaceMeta,
+      name: input.name.trim() || workspaceMeta.name,
+      description: input.description?.trim() || undefined,
+    };
+    setWorkspaceMeta(nextMeta);
+    await galleryStorage.saveWorkspaceMeta(nextMeta);
+  };
+
   return {
     artifacts,
     albums,
+    workspaceMeta,
     hasDirectory,
     currentDirectoryName,
     pendingHandle,
@@ -289,5 +306,6 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     handleCreateAlbum,
     handleSaveAlbum,
     handleDeleteAlbum,
+    handleUpdateWorkspaceMeta,
   };
 }

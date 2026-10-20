@@ -126,3 +126,16 @@ export interface Album {
   coverBlobUrl?: string; // 计算出的封面 Blob URL
   artifactCount: number; // 当前解析生效的工件总数
 }
+
+/**
+ * 工作区档案元数据模型 (Schema v1)
+ * 物理持久化于 .gallery/workspace.json
+ */
+export interface WorkspaceMeta {
+  schemaVersion: 1;
+  id: string; // 机器不可变键，格式: ws_<timestamp36><random36>
+  name: string; // 用户可见的工作区/陈列室名称（可编辑）
+  description?: string; // 工作区专题导言 / 备注（可编辑）
+}
+
+export type UpdateWorkspaceInput = Pick<WorkspaceMeta, 'name' | 'description'>;

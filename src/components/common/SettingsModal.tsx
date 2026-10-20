@@ -1,17 +1,23 @@
 import { type DefaultCreationMode, useSettings } from '@/context/SettingsContext';
+import { useToast } from '@/context/ToastContext';
+import type { UpdateWorkspaceInput, WorkspaceMeta } from '@/types';
 import {
+  Check,
   Clipboard,
+  Copy,
   FileCode,
   FolderCheck,
   FolderOpen,
   FolderSync,
+  Hash,
   Layers,
   Sliders,
   Sparkles,
+  Tag,
   X,
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,6 +27,8 @@ interface SettingsModalProps {
   pendingDirectoryName?: string;
   onPickDirectory: () => void;
   onRequestPendingPermission?: () => void;
+  workspaceMeta: WorkspaceMeta | null;
+  onUpdateWorkspace: (input: UpdateWorkspaceInput) => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -31,9 +39,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   pendingDirectoryName,
   onPickDirectory,
   onRequestPendingPermission,
+  workspaceMeta,
+  onUpdateWorkspace,
 }) => {
   const { settings, updateSettings, toggleGrouping } = useSettings();
+  const { toast } = useToast();
   const modalRef = useRef<HTMLDivElement>(null);
+
+  const [nameValue, setNameValue] = useState<string>(workspaceMeta?.name || '');
+  const [descValue, setDescValue] = useState<string>(workspaceMeta?.description || '');
+  const [hasCopiedId, setHasCopiedId] = useState<boolean>(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -64,6 +79,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSelectDefaultMode = (mode: DefaultCreationMode) => {
     updateSettings({ defaultCreationMode: mode });
+  };
+
+  const handleCopyId = () => {
+    if (!workspaceMeta?.id) return;
+    navigator.clipboard.writeText(workspaceMeta.id);
+    setHasCopiedId(true);
+    toast.success('已复制工作区唯一 ID');
+    setTimeout(() => setHasCopiedId(false), 2000);
+  };
+
+  const handleBlurSaveWorkspace = async () => {
+    if (!workspaceMeta) return;
+    const trimmedName = nameValue.trim();
+    const trimmedDesc = descValue.trim();
+    if (!trimmedName) {
+      setNameValue(workspaceMeta.name);
+      return;
+    }
+
+    if (trimmedName === workspaceMeta.name && trimmedDesc === (workspaceMeta.description || '')) {
+      return;
+    }
+
+    try {
+      await onUpdateWorkspace({
+        name: trimmedName,
+        description: trimmedDesc,
+      });
+      toast.success('工作区配置已保存');
+    } catch {
+      toast.error('保存工作区配置失败');
+    }
   };
 
   return (
@@ -98,16 +145,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* 设置内容区 */}
         <div className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[72vh]">
-          {/* 设置项 1：本地物理工作区管理 */}
+          {/* 设置项 1：工作区属性与物理落盘管理 */}
           <div className="flex flex-col gap-3 p-4 bg-background border border-border rounded-lg">
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col">
                 <span className="font-sans font-bold text-xs text-main flex items-center gap-1.5">
                   <FolderOpen className="w-3.5 h-3.5 text-status-info" />
-                  <span>本地物理工作区目录</span>
+                  <span>工作区档案与物理目录</span>
                 </span>
                 <span className="text-[11px] font-sans text-muted mt-0.5 leading-relaxed">
-                  关联本地文件夹，工件源码与快照将直接落盘保存。
+                  元数据持久化于 .gallery/workspace.json，直连本地文件夹实现工件实时落盘。
                 </span>
               </div>
 
@@ -132,8 +179,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
             </div>
 
-            {/* 详细路径与状态看板 */}
-            <div className="p-2.5 rounded bg-surface border border-border flex flex-col gap-1.5">
+            {/* 工作区名称与描述表单 */}
+            <div className="flex flex-col gap-2.5 pt-1">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between text-[10px] uppercase text-muted tracking-wider">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <Tag className="w-3 h-3 text-status-info" />
+                    <span>工作区名称</span>
+                  </span>
+                  {workspaceMeta?.id && (
+                    <div className="flex items-center gap-1 font-mono text-[10px] text-muted">
+                      <Hash className="w-3 h-3" />
+                      <span className="truncate max-w-[150px]">{workspaceMeta.id}</span>
+                      <button
+                        type="button"
+                        onClick={handleCopyId}
+                        className="p-0.5 hover:text-main text-muted rounded ml-0.5"
+                        title="复制工作区 ID"
+                      >
+                        {hasCopiedId ? (
+                          <Check className="w-3 h-3 text-status-success" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  onBlur={handleBlurSaveWorkspace}
+                  placeholder="例如：视觉物理与流体实验库"
+                  className="bg-surface border border-border px-3 py-1.5 rounded text-xs text-main outline-none focus:border-status-info font-sans font-medium"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase text-muted tracking-wider font-semibold">
+                  工作区描述 (选填)
+                </span>
+                <textarea
+                  rows={2}
+                  value={descValue}
+                  onChange={(e) => setDescValue(e.target.value)}
+                  onBlur={handleBlurSaveWorkspace}
+                  placeholder="记录该工作区/标本陈列室的收藏脉络或研究方向..."
+                  className="bg-surface border border-border p-2 rounded text-xs text-main outline-none focus:border-status-info font-sans resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            {/* 详细路径与挂载状态看板 */}
+            <div className="p-2.5 rounded bg-surface border border-border flex flex-col gap-1.5 mt-1">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-muted">当前挂载状态:</span>
                 {pendingDirectoryName && !hasDirectory ? (
@@ -155,7 +254,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {(directoryName || pendingDirectoryName) && (
                 <div className="flex items-center justify-between text-[11px] pt-1 border-t border-border/60">
-                  <span className="text-muted">当前目录:</span>
+                  <span className="text-muted">物理目录:</span>
                   <span className="font-mono font-bold text-main px-1.5 py-0.5 rounded bg-surface-subtle border border-border max-w-[280px] truncate">
                     {directoryName || pendingDirectoryName}
                   </span>

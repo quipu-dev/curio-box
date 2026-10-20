@@ -1,4 +1,4 @@
-import type { AlbumMeta, ProjectedIndexRecord } from '@/types';
+import type { AlbumMeta, ProjectedIndexRecord, WorkspaceMeta } from '@/types';
 
 const IDB_NAME = 'curio_box_meta_db';
 const IDB_VERSION = 3;
@@ -6,6 +6,7 @@ const IDB_STORE_HANDLES = 'fs_handles';
 const IDB_STORE_CACHE = 'artifact_cache';
 const IDB_STORE_ALBUMS = 'album_cache';
 const IDB_ACTIVE_KEY = 'active_directory_handle';
+const IDB_WORKSPACE_KEY = 'active_workspace_meta';
 
 export function openStorageDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -136,4 +137,32 @@ export async function deleteCachedAlbum(id: string): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch {}
+}
+
+export async function persistWorkspaceMetaToIDB(meta: WorkspaceMeta): Promise<void> {
+  try {
+    const db = await openStorageDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_HANDLES, 'readwrite');
+      tx.objectStore(IDB_STORE_HANDLES).put(meta, IDB_WORKSPACE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('持久化工作区元数据至 IDB 失败:', err);
+  }
+}
+
+export async function loadWorkspaceMetaFromIDB(): Promise<WorkspaceMeta | null> {
+  try {
+    const db = await openStorageDB();
+    return await new Promise<WorkspaceMeta | null>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_HANDLES, 'readonly');
+      const req = tx.objectStore(IDB_STORE_HANDLES).get(IDB_WORKSPACE_KEY);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
 }

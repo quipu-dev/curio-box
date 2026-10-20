@@ -1,4 +1,4 @@
-import type { AssetCacheStats } from '@/core/engine/asset-cache';
+import { type AssetCacheStats, getAssetDisplayName } from '@/core/engine/asset-cache';
 import { TagQueryEngine } from '@/core/engine/tag-engine';
 import {
   CheckCircle2,
@@ -146,8 +146,8 @@ export const DarkroomAssetsTab: React.FC<DarkroomAssetsTabProps> = ({
                 key={asset.url}
                 className="flex items-center justify-between p-2 bg-surface border border-border rounded text-[11px]"
               >
-                <span className="truncate max-w-[280px] text-main font-mono">
-                  {asset.url.split('/').pop()}
+                <span className="truncate max-w-[280px] text-main font-mono" title={asset.url}>
+                  {getAssetDisplayName(asset.url)}
                 </span>
                 {asset.status === 'cached' ? (
                   <span className="inline-flex items-center gap-1 text-status-success shrink-0">

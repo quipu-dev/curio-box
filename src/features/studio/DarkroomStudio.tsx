@@ -277,67 +277,86 @@ ${MetaSealEngine.strip(loadedSourceCode)}
     });
   };
 
-  // 第二步：用户在 Diff 审核界面确认后，真正写入磁盘并创建快照
+  // 第二步：用户在 Diff 审核界面确认后，真正写入磁盘并创建快照（乐观优先响应）
   const handleConfirmSimulation = async () => {
     if (!pendingSimulation) return;
     setIsCommitting(true);
 
-    requestAnimationFrame(async () => {
-      try {
-        const baseCode = activeSourceCode;
-        await galleryStorage.ensureGenesisSnapshot(artifact.meta.id, baseCode);
+    const baseCode = activeSourceCode;
+    const hasCodeChange = pendingSimulation.hasCodeChange;
+    const nextCode = MetaSealEngine.strip(pendingSimulation.nextCode);
+    const nextTags = pendingSimulation.nextTags;
+    const nextDesc = pendingSimulation.nextDescription;
 
-        const hasCodeChange = pendingSimulation.hasCodeChange;
-        const nextCode = MetaSealEngine.strip(pendingSimulation.nextCode);
-        const nextTags = pendingSimulation.nextTags;
-        const nextDesc = pendingSimulation.nextDescription;
+    const nextRev = hasCodeChange
+      ? artifact.meta.currentRevision + 1
+      : artifact.meta.currentRevision;
 
-        const nextRev = hasCodeChange
-          ? artifact.meta.currentRevision + 1
-          : artifact.meta.currentRevision;
+    const commitDescription =
+      pendingSimulation.nextCommitMessage ||
+      (hasCodeChange ? '应用审核通过的补丁' : '更新工件元数据');
 
-        const commitDescription =
-          pendingSimulation.nextCommitMessage ||
-          (hasCodeChange ? '应用审核通过的补丁' : '更新工件元数据');
+    const now = new Date().toISOString();
+    const optimisticHistory: CommitLogEntry[] = [
+      ...(artifact.meta.history || []).filter((h) => h.revision !== nextRev),
+      {
+        revision: nextRev,
+        timestamp: now,
+        action: 'patch' as const,
+        message: commitDescription,
+      },
+    ].sort((a, b) => a.revision - b.revision);
 
-        const updatedMeta = await galleryStorage.commitRevision({
-          artifactId: artifact.meta.id,
-          filename: artifact.meta.filename,
-          code: hasCodeChange ? nextCode : undefined,
-          revision: nextRev,
-          action: 'patch',
-          message: commitDescription,
-          tags: pendingSimulation.hasTagChange ? nextTags : undefined,
-          description: pendingSimulation.hasDescChange ? nextDesc : undefined,
-        });
+    const optimisticMeta: typeof artifact.meta = {
+      ...artifact.meta,
+      currentRevision: nextRev,
+      updatedAt: now,
+      history: optimisticHistory,
+      ...(pendingSimulation.hasTagChange ? { tags: nextTags } : {}),
+      ...(pendingSimulation.hasDescChange ? { description: nextDesc } : {}),
+    };
 
-        const finalCode = hasCodeChange ? nextCode : baseCode;
-        const updated: Artifact = {
-          ...artifact,
-          sourceCode: finalCode,
-          meta: updatedMeta,
-        };
+    const finalCode = hasCodeChange ? nextCode : baseCode;
+    const optimisticArtifact: Artifact = {
+      ...artifact,
+      sourceCode: finalCode,
+      meta: optimisticMeta,
+    };
 
-        setLoadedSourceCode(finalCode);
-        onUpdateArtifact(updated);
-        setPendingSimulation(null);
-        setPatchInput('');
+    // 乐观立即生效并关闭模态框，用户零等待
+    setLoadedSourceCode(finalCode);
+    onUpdateArtifact(optimisticArtifact);
+    setPendingSimulation(null);
+    setPatchInput('');
+    setIsCommitting(false);
 
-        const summary = [];
-        if (hasCodeChange) summary.push(`代码升级至 REV:${nextRev}`);
-        if (pendingSimulation.hasCommitChange) summary.push('提交日志已记录');
-        if (pendingSimulation.hasTagChange) summary.push('标签已更新');
-        if (pendingSimulation.hasDescChange) summary.push('研判备忘已写入');
+    const summary: string[] = [];
+    if (hasCodeChange) summary.push(`代码升级至 REV:${nextRev}`);
+    if (pendingSimulation.hasCommitChange) summary.push('提交日志已记录');
+    if (pendingSimulation.hasTagChange) summary.push('标签已更新');
+    if (pendingSimulation.hasDescChange) summary.push('研判备忘已写入');
+    toast.success(summary.length > 0 ? `修改已生效：${summary.join(' · ')}` : '修改已成功提交');
 
-        toast.success(summary.length > 0 ? `修改已落盘：${summary.join(' · ')}` : '修改已成功提交');
+    // 后台静默并发落盘
+    galleryStorage
+      .commitRevision({
+        artifactId: artifact.meta.id,
+        filename: artifact.meta.filename,
+        code: hasCodeChange ? nextCode : undefined,
+        revision: nextRev,
+        action: 'patch',
+        message: commitDescription,
+        tags: pendingSimulation.hasTagChange ? nextTags : undefined,
+        description: pendingSimulation.hasDescChange ? nextDesc : undefined,
+      })
+      .then(async (persistedMeta) => {
+        onUpdateArtifact({ ...optimisticArtifact, meta: persistedMeta });
         await refreshHistory();
-      } catch (err: unknown) {
+      })
+      .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`提交落盘失败: ${msg}`);
-      } finally {
-        setIsCommitting(false);
-      }
-    });
+        toast.error(`物理落盘失败: ${msg}`);
+      });
   };
 
   const handleRestoreRevision = async (targetRev: number) => {
@@ -352,26 +371,54 @@ ${MetaSealEngine.strip(loadedSourceCode)}
     }
 
     const nextRev = artifact.meta.currentRevision + 1;
-    const updatedMeta = await galleryStorage.commitRevision({
-      artifactId: artifact.meta.id,
-      filename: artifact.meta.filename,
-      code: historicalContent,
-      revision: nextRev,
-      action: 'rollback',
-      message: `还原自版本 REV:${targetRev}`,
-    });
+    const now = new Date().toISOString();
 
-    const updated: Artifact = {
-      ...artifact,
-      sourceCode: historicalContent,
-      meta: updatedMeta,
+    const optimisticHistory: CommitLogEntry[] = [
+      ...(artifact.meta.history || []).filter((h) => h.revision !== nextRev),
+      {
+        revision: nextRev,
+        timestamp: now,
+        action: 'rollback' as const,
+        message: `还原自版本 REV:${targetRev}`,
+      },
+    ].sort((a, b) => a.revision - b.revision);
+
+    const optimisticMeta: typeof artifact.meta = {
+      ...artifact.meta,
+      currentRevision: nextRev,
+      updatedAt: now,
+      history: optimisticHistory,
     };
 
+    const optimisticArtifact: Artifact = {
+      ...artifact,
+      sourceCode: historicalContent,
+      meta: optimisticMeta,
+    };
+
+    // 乐观立即生效
     setLoadedSourceCode(historicalContent);
-    onUpdateArtifact(updated);
+    onUpdateArtifact(optimisticArtifact);
     setViewingSnapshot(null);
     toast.success(`已恢复 REV:${targetRev} 内容为新版本 REV:${nextRev}`);
-    await refreshHistory();
+
+    // 后台并发落盘
+    galleryStorage
+      .commitRevision({
+        artifactId: artifact.meta.id,
+        filename: artifact.meta.filename,
+        code: historicalContent,
+        revision: nextRev,
+        action: 'rollback',
+        message: `还原自版本 REV:${targetRev}`,
+      })
+      .then(async (persistedMeta) => {
+        onUpdateArtifact({ ...optimisticArtifact, meta: persistedMeta });
+        await refreshHistory();
+      })
+      .catch((err) => {
+        toast.error(`还原落盘失败: ${err instanceof Error ? err.message : String(err)}`);
+      });
   };
 
   const handleCacheAllAssets = async () => {

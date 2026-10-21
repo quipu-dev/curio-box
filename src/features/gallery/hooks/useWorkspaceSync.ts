@@ -1,7 +1,14 @@
 import { useToast } from '@/context/ToastContext';
 import { galleryStorage } from '@/core/storage/fs-storage';
 import { buildAlbumView, resolveAlbumArtifacts } from '@/features/albums/album-resolver';
-import type { Album, AlbumMeta, Artifact, UpdateWorkspaceInput, WorkspaceMeta } from '@/types';
+import type {
+  Album,
+  AlbumMeta,
+  Artifact,
+  ArtifactBundleMeta,
+  UpdateWorkspaceInput,
+  WorkspaceMeta,
+} from '@/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface WindowWithFSA extends Window {
@@ -157,18 +164,51 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     tags: string[];
     description?: string;
   }) => {
-    const newArt = await galleryStorage.createArtifact(
-      data.filename,
-      data.content,
-      data.name,
-      data.tags,
-      data.description,
-    );
+    const now = new Date().toISOString();
+    const tempArtifactId = `art_${Math.random().toString(16).slice(2, 10)}`;
 
+    const optimisticMeta: ArtifactBundleMeta = {
+      schemaVersion: 2,
+      id: tempArtifactId,
+      name: data.name,
+      filename: data.filename,
+      tags: data.tags,
+      description: data.description?.trim() || undefined,
+      currentRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+      history: [
+        {
+          revision: 1,
+          timestamp: now,
+          action: 'genesis',
+          message: '初始版本',
+        },
+      ],
+    };
+
+    const optimisticArt: Artifact = {
+      meta: optimisticMeta,
+      sourceCode: data.content,
+    };
+
+    // 乐观更新：立刻在界面展现新工件，解除弹窗阻断
     setArtifacts((prev) => [
-      newArt,
-      ...prev.filter((a) => a.meta.filename !== newArt.meta.filename),
+      optimisticArt,
+      ...prev.filter((a) => a.meta.filename !== data.filename),
     ]);
+
+    // 后台静默并发落盘
+    galleryStorage
+      .createArtifact(data.filename, data.content, data.name, data.tags, data.description)
+      .then((persistedArt) => {
+        setArtifacts((prev) => prev.map((a) => (a.meta.id === tempArtifactId ? persistedArt : a)));
+      })
+      .catch((err) => {
+        // 异常回滚
+        setArtifacts((prev) => prev.filter((a) => a.meta.id !== tempArtifactId));
+        toast.error(`物理落盘失败: ${err instanceof Error ? err.message : String(err)}`);
+      });
   };
 
   const handleUpdateArtifact = (updated: Artifact) => {

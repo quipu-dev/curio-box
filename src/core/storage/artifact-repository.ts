@@ -8,6 +8,20 @@ const SNAPSHOTS_DIR = 'snapshots';
 const META_FILE = 'meta.json';
 const POSTER_FILE = 'poster.webp';
 
+/**
+ * 高性能安全文件写入辅助函数：显式关闭 keepExistingData 避免内核产生冗余数据拷贝
+ */
+async function writeHandleContent(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  content: string | Blob,
+): Promise<void> {
+  const fileHandle = await dir.getFileHandle(name, { create: true });
+  const writable = await fileHandle.createWritable({ keepExistingData: false });
+  await writable.write(content);
+  await writable.close();
+}
+
 export class ArtifactRepository {
   private dirHandle: FileSystemDirectoryHandle | null = null;
   private posterUrlMap: Map<string, string> = new Map();
@@ -238,33 +252,24 @@ export class ArtifactRepository {
 
     if (this.dirHandle) {
       const pureContent = MetaSealEngine.strip(content);
-
       const stampedContent = MetaSealEngine.inject(pureContent, bundleMeta);
-      const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(stampedContent);
-      await writable.close();
 
       const galleryDir = await this.dirHandle.getDirectoryHandle(GALLERY_DIR, { create: true });
       const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
       const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
-
       const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
-      const revHandle = await snapshotsDir.getFileHandle('rev-0001.snapshot', { create: true });
-      const snapWritable = await revHandle.createWritable();
-      await snapWritable.write(pureContent);
-      await snapWritable.close();
 
-      const metaHandle = await bundleDir.getFileHandle(META_FILE, { create: true });
-      const metaWritable = await metaHandle.createWritable();
-      await metaWritable.write(JSON.stringify(bundleMeta, null, 2));
-      await metaWritable.close();
+      // 并发落盘：主 HTML 文件、初始快照底片、元数据 JSON
+      await Promise.all([
+        writeHandleContent(this.dirHandle, filename, stampedContent),
+        writeHandleContent(snapshotsDir, 'rev-0001.snapshot', pureContent),
+        writeHandleContent(bundleDir, META_FILE, JSON.stringify(bundleMeta, null, 2)),
+      ]);
 
-      const file = await fileHandle.getFile();
       putCachedRecord({
         id: artifactId,
         filename,
-        htmlLastModified: file.lastModified,
+        htmlLastModified: Date.now(),
         bundleLastModified: new Date(now).getTime(),
         meta: bundleMeta,
         hasPoster: false,
@@ -352,26 +357,24 @@ export class ArtifactRepository {
       const artifactsDir = await galleryDir.getDirectoryHandle(ARTIFACTS_DIR, { create: true });
       const bundleDir = await artifactsDir.getDirectoryHandle(artifactId, { create: true });
 
+      const writeTasks: Promise<void>[] = [];
+
       if (code !== undefined) {
         const pureCode = MetaSealEngine.strip(code);
         const snapshotsDir = await bundleDir.getDirectoryHandle(SNAPSHOTS_DIR, { create: true });
         const snapFilename = `rev-${String(revision).padStart(4, '0')}.snapshot`;
-        const revHandle = await snapshotsDir.getFileHandle(snapFilename, { create: true });
-        const snapWritable = await revHandle.createWritable();
-        await snapWritable.write(pureCode);
-        await snapWritable.close();
-
         const stampedContent = MetaSealEngine.inject(pureCode, updatedMeta);
-        const fileHandle = await this.dirHandle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(stampedContent);
-        await writable.close();
+
+        writeTasks.push(writeHandleContent(snapshotsDir, snapFilename, pureCode));
+        writeTasks.push(writeHandleContent(this.dirHandle, filename, stampedContent));
       }
 
-      const metaHandle = await bundleDir.getFileHandle(META_FILE, { create: true });
-      const metaWritable = await metaHandle.createWritable();
-      await metaWritable.write(JSON.stringify(updatedMeta, null, 2));
-      await metaWritable.close();
+      writeTasks.push(
+        writeHandleContent(bundleDir, META_FILE, JSON.stringify(updatedMeta, null, 2)),
+      );
+
+      // 并发执行所有关联文件的落盘
+      await Promise.all(writeTasks);
 
       putCachedRecord({
         id: updatedMeta.id,

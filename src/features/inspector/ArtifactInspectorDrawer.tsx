@@ -482,7 +482,7 @@ export const ArtifactInspectorDrawer: React.FC<ArtifactInspectorDrawerProps> = (
           className="text-status-error hover:opacity-80 flex items-center gap-1.5 transition-colors font-medium cursor-pointer"
         >
           <Trash2 className="w-3.5 h-3.5" />
-          <span>移至废纸篓</span>
+          <span>删除</span>
         </button>
       </footer>
     </aside>

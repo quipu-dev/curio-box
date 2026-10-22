@@ -39,6 +39,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.2.2",
     "vite": "^5.1.4",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^2.1.9"
   }
 }

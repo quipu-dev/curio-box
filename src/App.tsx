@@ -67,6 +67,7 @@ function MainApp() {
     handleSaveAlbum,
     handleDeleteAlbum,
     handleUpdateWorkspaceMeta,
+    handleSwitchToOpfsSandbox,
     handleExportWorkspaceZip,
   } = useWorkspaceSync(activeAlbumId);
 
@@ -517,6 +518,7 @@ function MainApp() {
         pendingDirectoryName={pendingHandle?.name}
         onPickDirectory={handlePickDirectory}
         onRequestPendingPermission={handleRequestPendingPermission}
+        onSwitchToOpfsSandbox={handleSwitchToOpfsSandbox}
         workspaceMeta={workspaceMeta}
         onUpdateWorkspace={handleUpdateWorkspaceMeta}
         onExportWorkspace={handleExportWorkspaceZip}

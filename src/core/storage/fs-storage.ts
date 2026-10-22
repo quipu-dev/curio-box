@@ -87,6 +87,28 @@ export class GalleryStorage {
     return this.dirHandle !== null;
   }
 
+  public async switchToOpfsSandbox(): Promise<void> {
+    if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory) {
+      const opfsRoot = await navigator.storage.getDirectory();
+      this.setDirectoryHandle(opfsRoot, 'opfs-sandbox');
+      // 清除 IndexedDB 中保存的外部句柄
+      try {
+        const { openStorageDB } = await import('@/core/storage/idb');
+        const db = await openStorageDB();
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction('fs_handles', 'readwrite');
+          tx.objectStore('fs_handles').delete('active_directory_handle');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.warn('清理历史本地句柄失败:', err);
+      }
+    } else {
+      throw new Error('当前浏览器环境不支持 OPFS 沙箱存储');
+    }
+  }
+
   // --- 工件仓储委托 ---
   public loadProjectedArtifacts(): Promise<Artifact[]> {
     return this.artifacts.loadProjectedArtifacts();

@@ -137,6 +137,19 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     }
   };
 
+  const handleSwitchToOpfsSandbox = async () => {
+    try {
+      await galleryStorage.switchToOpfsSandbox();
+      setDriverType('opfs-sandbox');
+      setPendingHandle(null);
+      await loadArtifactsSWR();
+      toast.success('已成功切至浏览器内置沙箱');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`切换沙箱失败: ${msg}`);
+    }
+  };
+
   // 派生相册与工件
   const activeAlbumMeta = useMemo(() => {
     if (!activeAlbumId) return null;
@@ -348,6 +361,7 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     albumViews,
     handlePickDirectory,
     handleRequestPendingPermission,
+    handleSwitchToOpfsSandbox,
     handleSaveComposerArtifact,
     handleUpdateArtifact,
     handleUpdateTags,

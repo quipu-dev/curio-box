@@ -31,6 +31,7 @@ interface SettingsModalProps {
   pendingDirectoryName?: string;
   onPickDirectory: () => void;
   onRequestPendingPermission?: () => void;
+  onSwitchToOpfsSandbox?: () => Promise<void>;
   workspaceMeta: WorkspaceMeta | null;
   onUpdateWorkspace: (input: UpdateWorkspaceInput) => Promise<void>;
   onExportWorkspace?: (onProgress?: (status: string) => void) => Promise<void>;
@@ -45,6 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   pendingDirectoryName,
   onPickDirectory,
   onRequestPendingPermission,
+  onSwitchToOpfsSandbox,
   workspaceMeta,
   onUpdateWorkspace,
   onExportWorkspace,
@@ -185,25 +187,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
 
-              {pendingDirectoryName && !hasDirectory && onRequestPendingPermission ? (
-                <button
-                  type="button"
-                  onClick={onRequestPendingPermission}
-                  className="px-3 py-1.5 bg-status-warn-bg text-status-warn border border-status-warn-border hover:bg-status-warn-bg/80 rounded font-semibold text-xs transition-colors shrink-0 flex items-center gap-1.5"
-                >
-                  <FolderSync className="w-3.5 h-3.5" />
-                  <span>恢复授权</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onPickDirectory}
-                  className="px-3 py-1.5 bg-surface-elevated hover:bg-surface border border-border text-main rounded font-semibold text-xs transition-colors shrink-0 flex items-center gap-1.5"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-status-info" />
-                  <span>{hasDirectory ? '切换工作区' : '关联本地目录'}</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {driverType === 'fsa-physical' && onSwitchToOpfsSandbox && (
+                  <button
+                    type="button"
+                    onClick={onSwitchToOpfsSandbox}
+                    className="px-3 py-1.5 bg-surface-elevated hover:bg-surface border border-border text-muted hover:text-main rounded font-semibold text-xs transition-colors flex items-center gap-1.5"
+                    title="断开当前物理文件夹直连，切至浏览器内置沙箱存储"
+                  >
+                    <Database className="w-3.5 h-3.5 text-status-info" />
+                    <span>切至浏览器沙箱</span>
+                  </button>
+                )}
+
+                {pendingDirectoryName && !hasDirectory && onRequestPendingPermission ? (
+                  <button
+                    type="button"
+                    onClick={onRequestPendingPermission}
+                    className="px-3 py-1.5 bg-status-warn-bg text-status-warn border border-status-warn-border hover:bg-status-warn-bg/80 rounded font-semibold text-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <FolderSync className="w-3.5 h-3.5" />
+                    <span>恢复授权</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onPickDirectory}
+                    className="px-3 py-1.5 bg-surface-elevated hover:bg-surface border border-border text-main rounded font-semibold text-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-status-info" />
+                    <span>{hasDirectory ? '切换工作区' : '关联本地目录'}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* 工作区名称与描述表单 */}

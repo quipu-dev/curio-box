@@ -201,13 +201,16 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       x: e.clientX - position.x,
       y: e.clientY - position.y,
     };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!isDraggingRef.current) return;
-    const nextX = e.clientX - dragOffsetRef.current.x;
-    const nextY = e.clientY - dragOffsetRef.current.y;
+    // 实时更新位置，同时限制在视口可视范围内，防止拖出屏幕边界
+    const nextX = Math.max(0, Math.min(window.innerWidth, e.clientX - dragOffsetRef.current.x));
+    const nextY = Math.max(0, Math.min(window.innerHeight, e.clientY - dragOffsetRef.current.y));
     setPosition({ x: nextX, y: nextY });
   };
 
@@ -216,9 +219,11 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
       const deltaX = Math.abs(e.clientX - dragStartPosRef.current.x);
       const deltaY = Math.abs(e.clientY - dragStartPosRef.current.y);
 
-      if (deltaX < 5 && deltaY < 5) {
+      // 若几乎没有位移，则判定为点击展开/收起
+      if (deltaX < 4 && deltaY < 4) {
         setIsExpanded((prev) => !prev);
       } else {
+        // 触发拖动后的边缘磁吸贴边计算
         const w = window.innerWidth;
         const h = window.innerHeight;
         const curX = e.clientX;
@@ -236,16 +241,16 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
 
         if (minDist === distTop) {
           targetEdge = 'top';
-          targetPos = { x: Math.max(160, Math.min(w - 160, curX)), y: 0 };
+          targetPos = { x: Math.max(100, Math.min(w - 100, curX)), y: 0 };
         } else if (minDist === distBottom) {
           targetEdge = 'bottom';
-          targetPos = { x: Math.max(160, Math.min(w - 160, curX)), y: h };
+          targetPos = { x: Math.max(100, Math.min(w - 100, curX)), y: h };
         } else if (minDist === distLeft) {
           targetEdge = 'left';
-          targetPos = { x: 0, y: Math.max(120, Math.min(h - 120, curY)) };
+          targetPos = { x: 0, y: Math.max(80, Math.min(h - 80, curY)) };
         } else {
           targetEdge = 'right';
-          targetPos = { x: w, y: Math.max(120, Math.min(h - 120, curY)) };
+          targetPos = { x: w, y: Math.max(80, Math.min(h - 80, curY)) };
         }
 
         setDockEdge(targetEdge);
@@ -345,7 +350,8 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          className={`flex items-center justify-center cursor-grab active:cursor-grabbing border-0 outline-none p-0 transition-all duration-300 ease-out origin-center ${
+          onPointerCancel={handlePointerUp}
+          className={`touch-none flex items-center justify-center cursor-grab active:cursor-grabbing border-0 outline-none p-0 transition-all duration-300 ease-out origin-center ${
             dockEdge === 'top' || dockEdge === 'bottom'
               ? isExpanded
                 ? 'h-3 w-32 bg-zinc-700/90 rounded-md my-0.5'
@@ -377,7 +383,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
           }`}
         >
           {dockEdge === 'top' || dockEdge === 'bottom' ? (
-            <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-3 py-1.5 rounded-lg shadow-2xl text-xs font-mono text-zinc-200 whitespace-nowrap">
+            <div className="flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 px-2 sm:px-3 py-1.5 rounded-lg shadow-2xl text-xs font-mono text-zinc-200 whitespace-nowrap">
               {artifacts.length > 1 && (
                 <div className="flex items-center gap-0.5 border-r border-zinc-700 pr-1.5 mr-1">
                   <button
@@ -405,7 +411,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               )}
 
               <span
-                className="text-[11px] text-zinc-400 max-w-[180px] truncate mr-1.5"
+                className="hidden sm:inline text-[11px] text-zinc-400 max-w-[180px] truncate mr-1.5"
                 title={albumTitle ? `《${albumTitle}》· ${artifact.meta.name}` : artifact.meta.name}
               >
                 {albumTitle ? (
@@ -417,7 +423,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                 {artifact.meta.name}
               </span>
 
-              {/* 分体截屏按钮 */}
+              {/* 截屏按钮（移动端直截，桌面端支持切换模式） */}
               <div ref={menuRef} className="relative flex items-center">
                 <div className="flex items-center bg-zinc-800/80 border border-zinc-700 rounded overflow-hidden">
                   <button
@@ -431,7 +437,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsMenuOpen((prev) => !prev)}
-                    className="p-1 hover:bg-zinc-700 transition-colors border-l border-zinc-700 text-zinc-400 hover:text-white"
+                    className="hidden sm:inline-block p-1 hover:bg-zinc-700 transition-colors border-l border-zinc-700 text-zinc-400 hover:text-white"
                     title="选择截屏模式"
                   >
                     <ChevronDown className="w-2.5 h-2.5" />
@@ -483,7 +489,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenDarkroom(artifact)}
-                className="flex items-center gap-1 px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-[11px] text-zinc-200"
+                className="hidden sm:flex items-center gap-1 px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors text-[11px] text-zinc-200"
                 title="打开差量暗房 (Negative Chain)"
               >
                 <Code2 className="w-3.5 h-3.5 text-status-info" />
@@ -493,7 +499,7 @@ export const FullscreenStage: React.FC<FullscreenStageProps> = ({
               <button
                 type="button"
                 onClick={handleToggleNativeFullscreen}
-                className="p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
+                className="hidden sm:block p-1.5 hover:bg-surface-subtle rounded transition-colors text-zinc-300 hover:text-white"
                 title={isNativeFullscreen ? '退出系统真实全屏' : '进入系统真实全屏'}
               >
                 {isNativeFullscreen ? (

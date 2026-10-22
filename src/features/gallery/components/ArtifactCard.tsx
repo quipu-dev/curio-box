@@ -2,6 +2,7 @@ import { TagQueryEngine } from '@/core/engine/tag-engine';
 import { type Artifact, getLastCommitMessage } from '@/types';
 import { Camera, Code2, Play, Star } from 'lucide-react';
 import type React from 'react';
+import { useRef } from 'react';
 
 interface ArtifactCardProps {
   artifact: Artifact;
@@ -27,6 +28,35 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const formattedDate = new Date(
     artifact.meta.updatedAt || artifact.meta.createdAt,
   ).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+
+  // 移动端轻量触控判断：区分短点全屏播放与长按档案检视
+  const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressedRef = useRef<boolean>(false);
+
+  const handleTouchStart = () => {
+    isLongPressedRef.current = false;
+    touchTimerRef.current = setTimeout(() => {
+      isLongPressedRef.current = true;
+      onOpenInspector(artifact);
+    }, 550);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
+  const handleClickCover = () => {
+    if (isLongPressedRef.current) return;
+    // 移动端优先全屏放映，桌面端打开检视
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      onOpenStage(artifact);
+    } else {
+      onOpenInspector(artifact);
+    }
+  };
 
   return (
     <div
@@ -54,12 +84,14 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           </div>
         )}
 
-        {/* 封面透明原生按钮（点击进入标本档案检视） */}
+        {/* 封面透明原生按钮（点击放映或检视，支持长按） */}
         <button
           type="button"
-          onClick={() => onOpenInspector(artifact)}
+          onClick={handleClickCover}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           className="absolute inset-0 w-full h-full cursor-pointer z-[1] outline-none border-0 bg-transparent"
-          title="点击检视标本档案"
+          title="点击查看，手机端长按打开档案"
         />
 
         {/* 左上角槽位 */}
@@ -82,8 +114,8 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
           </span>
         </div>
 
-        {/* 悬浮快捷控制带 */}
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[2px] flex items-center justify-center gap-2 z-20 pointer-events-none">
+        {/* 桌面端悬浮快捷控制带（移动端收起） */}
+        <div className="hidden sm:flex absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[2px] items-center justify-center gap-2 z-20 pointer-events-none">
           <button
             type="button"
             onClick={(e) => {

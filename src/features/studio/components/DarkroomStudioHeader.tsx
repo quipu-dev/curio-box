@@ -49,25 +49,25 @@ const CAPTURE_MODE_OPTIONS: {
   {
     mode: 'auto',
     label: '智能自动',
-    desc: '自动探测 Canvas 与 DOM 复合',
+    desc: '自动探测画布与视口进行复合截取',
     icon: Sparkles,
   },
   {
     mode: 'canvas',
     label: '硬件画布',
-    desc: '直接抓取 WebGL / 2D Canvas',
+    desc: '直接抓取 WebGL 或 2D 画布像素',
     icon: Layers,
   },
   {
     mode: 'dom',
     label: '视口 DOM',
-    desc: '基于 SVG foreignObject 全景光栅化',
+    desc: '基于 SVG 矢量全景光栅化渲染',
     icon: Camera,
   },
   {
     mode: 'screen',
     label: '屏幕采集',
-    desc: '浏览器原生视口拾取 (终极兜底)',
+    desc: '浏览器原生视口拾取',
     icon: Monitor,
   },
 ];

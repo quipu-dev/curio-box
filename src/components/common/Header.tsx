@@ -26,6 +26,7 @@ interface HeaderProps {
   onOpenNewArtifactComposer: () => void;
   onOpenNewAlbumComposer?: () => void;
   hasDirectory: boolean;
+  driverType?: 'fsa-physical' | 'opfs-sandbox';
   pendingDirectoryName?: string;
   onPickDirectory: () => void;
   onRequestPendingPermission?: () => void;
@@ -44,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewArtifactComposer,
   onOpenNewAlbumComposer,
   hasDirectory,
+  driverType = 'opfs-sandbox',
   pendingDirectoryName,
   onPickDirectory,
   onRequestPendingPermission,
@@ -54,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { settings } = useSettings();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isDefaultClipboard = settings.defaultCreationMode === 'clipboard';
@@ -86,9 +89,9 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isCreateMenuOpen]);
 
   return (
-    <header className="h-14 border-b border-border bg-surface px-5 flex items-center justify-between shrink-0 gap-4 z-20">
-      <div className="flex items-center gap-6">
-        {/* 双轨大盘分段器 */}
+    <header className="h-14 border-b border-border bg-surface px-3 sm:px-5 flex items-center justify-between shrink-0 gap-2 sm:gap-4 z-20">
+      <div className="flex items-center gap-2 sm:gap-6">
+        {/* 双轨大盘分段器 (移动端紧凑只显示关键图标) */}
         <nav
           aria-label="视图模式切换"
           className="flex items-center bg-background border border-border p-0.5 rounded-lg text-xs font-medium"
@@ -96,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => onSwitchView('specimens')}
-            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
               currentView === 'specimens'
                 ? 'bg-surface-elevated text-status-info font-semibold shadow-sm'
                 : 'text-muted hover:text-main'
@@ -104,12 +107,12 @@ export const Header: React.FC<HeaderProps> = ({
             title="查看全部标本工件流"
           >
             <LayoutGrid className="w-3.5 h-3.5" />
-            <span>标本工件</span>
+            <span className="hidden sm:inline">标本工件</span>
           </button>
           <button
             type="button"
             onClick={() => onSwitchView('albums')}
-            className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
               currentView === 'albums'
                 ? 'bg-surface-elevated text-status-info font-semibold shadow-sm'
                 : 'text-muted hover:text-main'
@@ -117,14 +120,14 @@ export const Header: React.FC<HeaderProps> = ({
             title="查看精选策展画册"
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>策展画册</span>
+            <span className="hidden sm:inline">策展画册</span>
           </button>
         </nav>
       </div>
 
-      {/* 居中聚合搜索框 */}
-      <div className="flex-1 max-w-lg mx-2">
-        <div className="relative flex items-center">
+      {/* 桌面端居中聚合搜索框 */}
+      <div className="hidden md:flex flex-1 max-w-lg mx-2">
+        <div className="relative flex items-center w-full">
           <Search className="w-4 h-4 text-muted absolute left-3 pointer-events-none z-10" />
           <TagAutocompleteInput
             id="global-search-input"
@@ -147,31 +150,68 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
+      {/* 移动端搜索遮罩/弹窗 */}
+      {isMobileSearchOpen && (
+        <div className="md:hidden fixed inset-x-0 top-0 z-50 bg-surface border-b border-border p-3 shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+          <div className="flex-1 relative flex items-center">
+            <Search className="w-4 h-4 text-muted absolute left-3 pointer-events-none z-10" />
+            <TagAutocompleteInput
+              value={searchQuery}
+              onChange={onSearchChange}
+              allTags={allTags || []}
+              allowPredicates={true}
+              placeholder="输入标签或名称搜索..."
+              className="w-full bg-background border border-border rounded-lg pl-9 pr-3 py-1.5 text-xs text-main placeholder:text-muted focus:outline-none focus:border-status-info font-mono"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileSearchOpen(false)}
+            className="px-2.5 py-1.5 text-xs text-muted hover:text-main"
+          >
+            完成
+          </button>
+        </div>
+      )}
+
       {/* 右侧操作簇 */}
-      <div className="flex items-center gap-3">
-        {/* 预览模式下的直观连接工作区入口（已连接后自动隐退，仅收于设置中） */}
-        {!hasDirectory &&
-          (pendingDirectoryName && onRequestPendingPermission ? (
-            <button
-              type="button"
-              onClick={onRequestPendingPermission}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-warn-border bg-status-warn-bg text-status-warn hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0"
-              title={`恢复对本地目录 [${pendingDirectoryName}] 的访问授权`}
-            >
-              <FolderSync className="w-3.5 h-3.5 animate-pulse" />
-              <span className="font-sans font-bold">恢复工作区授权</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onPickDirectory}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-info-border bg-status-info-bg text-status-info hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0 shadow-sm"
-              title="连接本地文件夹，实现工件与快照的本地实时物理落盘"
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              <span className="font-sans font-bold">连接工作区</span>
-            </button>
-          ))}
+      <div className="flex items-center gap-1.5 sm:gap-3">
+        {/* 移动端搜索呼出按钮 */}
+        <button
+          type="button"
+          onClick={() => setIsMobileSearchOpen(true)}
+          className="md:hidden p-2 border border-border text-muted hover:text-main rounded-lg transition-colors"
+          title="搜索工件或画册"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+
+        {/* 桌面端连接工作区入口（在外部未挂载物理目录时显式展示） */}
+        {!hasDirectory && driverType !== 'opfs-sandbox' && (
+          <div className="hidden sm:flex">
+            {pendingDirectoryName && onRequestPendingPermission ? (
+              <button
+                type="button"
+                onClick={onRequestPendingPermission}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-warn-border bg-status-warn-bg text-status-warn hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0"
+                title={`恢复对本地目录 [${pendingDirectoryName}] 的访问授权`}
+              >
+                <FolderSync className="w-3.5 h-3.5 animate-pulse" />
+                <span className="font-sans font-bold">恢复工作区授权</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onPickDirectory}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-status-info-border bg-status-info-bg text-status-info hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer shrink-0 shadow-sm"
+                title="连接本地文件夹，实现工件与快照的本地实时物理落盘"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span className="font-sans font-bold">连接工作区</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* 组合导入与创建主按钮（深色模式适配，依据首选项切换主动作） */}
         {currentView === 'albums' ? (

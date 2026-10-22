@@ -138,4 +138,14 @@ export interface WorkspaceMeta {
   description?: string; // 工作区专题导言 / 备注（可编辑）
 }
 
+export type StorageDriverType = 'fsa-physical' | 'opfs-sandbox';
+
+export interface WorkspaceMeta {
+  schemaVersion: 1;
+  id: string; // 机器不可变键，格式: ws_<timestamp36><random36>
+  name: string; // 用户可见的工作区/陈列室名称（可编辑）
+  description?: string; // 工作区专题导言 / 备注（可编辑）
+  driverType?: StorageDriverType; // 存储驱动类型：外部真实物理目录 或 浏览器私有 OPFS 沙箱
+}
+
 export type UpdateWorkspaceInput = Pick<WorkspaceMeta, 'name' | 'description'>;

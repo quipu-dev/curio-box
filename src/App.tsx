@@ -45,6 +45,7 @@ function MainApp() {
   const {
     artifacts,
     hasDirectory,
+    driverType,
     currentDirectoryName,
     pendingHandle,
     activeAlbumMeta,
@@ -66,6 +67,7 @@ function MainApp() {
     handleSaveAlbum,
     handleDeleteAlbum,
     handleUpdateWorkspaceMeta,
+    handleExportWorkspaceZip,
   } = useWorkspaceSync(activeAlbumId);
 
   const isAlbumsView =
@@ -266,6 +268,7 @@ function MainApp() {
           onOpenNewArtifactComposer={handleOpenNewArtifact}
           onOpenNewAlbumComposer={() => setIsAlbumComposerOpen(true)}
           hasDirectory={hasDirectory}
+          driverType={driverType}
           pendingDirectoryName={pendingHandle?.name}
           onPickDirectory={handlePickDirectory}
           onRequestPendingPermission={handleRequestPendingPermission}
@@ -510,11 +513,13 @@ function MainApp() {
         onClose={() => setIsSettingsOpen(false)}
         hasDirectory={hasDirectory}
         directoryName={currentDirectoryName}
+        driverType={driverType}
         pendingDirectoryName={pendingHandle?.name}
         onPickDirectory={handlePickDirectory}
         onRequestPendingPermission={handleRequestPendingPermission}
         workspaceMeta={workspaceMeta}
         onUpdateWorkspace={handleUpdateWorkspaceMeta}
+        onExportWorkspace={handleExportWorkspaceZip}
       />
     </div>
   );

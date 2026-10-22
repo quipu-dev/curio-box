@@ -54,7 +54,9 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
     }
     return '形态:原生html 状态:新建';
   });
+  const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 768;
   const [showPreview, setShowPreview] = useState<boolean>(true);
+  const [activeMobileView, setActiveMobileView] = useState<'preview' | 'code'>('preview');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -128,24 +130,51 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowPreview((prev) => !prev)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded hover:bg-surface transition-colors text-muted hover:text-main text-[11px]"
-              title="折叠/展开实时预览"
-            >
-              {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span>{showPreview ? '隐藏预览' : '显示预览'}</span>
-            </button>
+            {isMobileScreen ? (
+              <div className="flex items-center border border-border rounded overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setActiveMobileView('preview')}
+                  className={`px-2 py-1 ${
+                    activeMobileView === 'preview'
+                      ? 'bg-status-info-bg text-status-info font-bold'
+                      : 'text-muted'
+                  }`}
+                >
+                  预览
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMobileView('code')}
+                  className={`px-2 py-1 ${
+                    activeMobileView === 'code'
+                      ? 'bg-status-info-bg text-status-info font-bold'
+                      : 'text-muted'
+                  }`}
+                >
+                  源码
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowPreview((prev) => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded hover:bg-surface transition-colors text-muted hover:text-main text-[11px]"
+                title="折叠/展开实时预览"
+              >
+                {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showPreview ? '隐藏预览' : '显示预览'}</span>
+              </button>
+            )}
 
             <button
               type="button"
               disabled={isSaving}
               onClick={handlePerformSave}
-              className="flex items-center gap-1.5 bg-main text-surface px-4 py-1.5 rounded font-semibold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
+              className="flex items-center gap-1.5 bg-main text-surface px-3 sm:px-4 py-1.5 rounded font-semibold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? '正在保存...' : '保存工件 (REV:1)'}</span>
+              <span>{isSaving ? '保存中...' : '保存'}</span>
             </button>
 
             <button
@@ -229,56 +258,58 @@ export const ArtifactComposerModal: React.FC<ArtifactComposerModalProps> = ({
 
         {/* 主编辑与预览区域 */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          {/* 左侧代码编辑区 */}
-          <div
-            className="dark-scope flex-1 flex flex-col bg-code text-main overflow-hidden border-b md:border-b-0 md:border-r border-border"
-            onKeyDown={handleEditorKeyDown}
-          >
-            <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex justify-between items-center text-[11px] font-mono text-zinc-400 shrink-0">
-              <span className="flex items-center gap-1.5">
-                <Code2 className="w-3.5 h-3.5 text-status-info" />
-                <span>HTML / WebGL / Canvas 单文件源码</span>
-              </span>
-              <span>
-                {lineCount} 行 · {sourceCode.length} 字符 · 智能高亮
-              </span>
-            </div>
+          {/* 代码编辑区 (移动端依据 Tab 切换，桌面端并列) */}
+          {(!isMobileScreen || activeMobileView === 'code') && (
+            <div
+              className="dark-scope flex-1 flex flex-col bg-code text-main overflow-hidden border-b md:border-b-0 md:border-r border-border"
+              onKeyDown={handleEditorKeyDown}
+            >
+              <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex justify-between items-center text-[11px] font-mono text-zinc-400 shrink-0">
+                <span className="flex items-center gap-1.5">
+                  <Code2 className="w-3.5 h-3.5 text-status-info" />
+                  <span>源码</span>
+                </span>
+                <span>
+                  {lineCount} 行 · {sourceCode.length} 字符
+                </span>
+              </div>
 
-            <div className="flex-1 overflow-hidden [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto">
-              <CodeMirror
-                value={sourceCode}
-                height="100%"
-                theme={oneDark}
-                extensions={[html()]}
-                onChange={(val) => setSourceCode(val)}
-                placeholder="在此粘贴或编写工件 HTML 完整代码..."
-                className="h-full text-xs font-mono"
-                basicSetup={{
-                  lineNumbers: true,
-                  foldGutter: true,
-                  dropCursor: true,
-                  allowMultipleSelections: false,
-                  indentOnInput: true,
-                  bracketMatching: true,
-                  closeBrackets: true,
-                  autocompletion: false,
-                  highlightActiveLine: true,
-                  highlightSelectionMatches: true,
-                  tabSize: 2,
-                }}
-              />
+              <div className="flex-1 overflow-hidden [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto">
+                <CodeMirror
+                  value={sourceCode}
+                  height="100%"
+                  theme={oneDark}
+                  extensions={[html()]}
+                  onChange={(val) => setSourceCode(val)}
+                  placeholder="在此粘贴或编写工件 HTML 完整代码..."
+                  className="h-full text-xs font-mono"
+                  basicSetup={{
+                    lineNumbers: true,
+                    foldGutter: true,
+                    dropCursor: true,
+                    allowMultipleSelections: false,
+                    indentOnInput: true,
+                    bracketMatching: true,
+                    closeBrackets: true,
+                    autocompletion: false,
+                    highlightActiveLine: true,
+                    highlightSelectionMatches: true,
+                    tabSize: 2,
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 右侧实时试映沙箱 */}
-          {showPreview && (
-            <div className="w-full md:w-1/2 flex flex-col bg-black overflow-hidden">
+          {/* 实时试映沙箱 */}
+          {(!isMobileScreen ? showPreview : activeMobileView === 'preview') && (
+            <div className="w-full md:w-1/2 flex flex-col bg-black overflow-hidden flex-1">
               <div className="h-8 bg-zinc-950/80 border-b border-zinc-800 px-3 flex items-center justify-between text-[11px] font-mono text-zinc-400 shrink-0">
                 <span className="flex items-center gap-1.5 text-status-success">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>实时预览</span>
                 </span>
-                <span className="text-[10px] text-zinc-500">代码变动即时更新</span>
+                <span className="text-[10px] text-zinc-500">即时响应代码变动</span>
               </div>
 
               <div className="flex-1 relative p-3 flex items-center justify-center overflow-hidden">

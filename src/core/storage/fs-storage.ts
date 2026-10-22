@@ -8,54 +8,79 @@ import type {
   ArtifactBundleMeta,
   CommitLogEntry,
   CreateAlbumInput,
+  StorageDriverType,
   WorkspaceMeta,
 } from '@/types';
 
 /**
  * 仓储门面 (Storage Facade)：统合底层工件与画册两个正交仓储，
- * 同时维持单例 galleryStorage 的完全向后兼容能力。
+ * 同时支持外部本地文件夹 (FSA) 与浏览器本地私有沙箱 (OPFS) 统一调度。
  */
 export class GalleryStorage {
   private dirHandle: FileSystemDirectoryHandle | null = null;
+  private driverType: StorageDriverType = 'opfs-sandbox';
   public readonly artifacts = new ArtifactRepository();
   public readonly albums = new AlbumRepository();
   public readonly workspace = new WorkspaceRepository();
 
-  public setDirectoryHandle(handle: FileSystemDirectoryHandle): void {
+  public setDirectoryHandle(
+    handle: FileSystemDirectoryHandle,
+    driver: StorageDriverType = 'fsa-physical',
+  ): void {
     this.dirHandle = handle;
+    this.driverType = driver;
     this.artifacts.setDirectoryHandle(handle);
     this.albums.setDirectoryHandle(handle);
     this.workspace.setDirectoryHandle(handle);
-    persistHandleToIDB(handle).catch(() => {});
+    if (driver === 'fsa-physical') {
+      persistHandleToIDB(handle).catch(() => {});
+    }
   }
 
   public getDirectoryHandle(): FileSystemDirectoryHandle | null {
     return this.dirHandle;
   }
 
+  public getDriverType(): StorageDriverType {
+    return this.driverType;
+  }
+
   public async restoreSavedHandle(): Promise<{
     handle: FileSystemDirectoryHandle | null;
     permission: PermissionState;
+    driverType: StorageDriverType;
   }> {
+    // 1. 优先尝试恢复用户此前授权的真实外部物理目录
     const saved = await loadHandleFromIDB();
-    if (!saved) {
-      return { handle: null, permission: 'prompt' };
-    }
+    if (saved) {
+      try {
+        const perm = await (
+          saved as unknown as {
+            queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
+          }
+        ).queryPermission({ mode: 'readwrite' });
 
-    try {
-      const perm = await (
-        saved as unknown as {
-          queryPermission: (opt: { mode: string }) => Promise<PermissionState>;
+        if (perm === 'granted') {
+          this.setDirectoryHandle(saved, 'fsa-physical');
+          return { handle: saved, permission: 'granted', driverType: 'fsa-physical' };
         }
-      ).queryPermission({ mode: 'readwrite' });
-
-      if (perm === 'granted') {
-        this.setDirectoryHandle(saved);
+      } catch {
+        // 忽略权限探测异常
       }
-      return { handle: saved, permission: perm };
-    } catch {
-      return { handle: saved, permission: 'prompt' };
     }
+
+    // 2. 无法恢复外部物理目录时，自动挂载 OPFS（浏览器私有文件系统）作为零配置全功能持久底座
+    try {
+      if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory) {
+        const opfsRoot = await navigator.storage.getDirectory();
+        this.setDirectoryHandle(opfsRoot, 'opfs-sandbox');
+        return { handle: opfsRoot, permission: 'granted', driverType: 'opfs-sandbox' };
+      }
+    } catch (err) {
+      console.warn('挂载 OPFS 沙箱底座失败，将降级为内存演示模式:', err);
+    }
+
+    return { handle: null, permission: 'prompt', driverType: 'opfs-sandbox' };
   }
 
   public hasHandle(): boolean {

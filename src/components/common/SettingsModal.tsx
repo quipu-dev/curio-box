@@ -1,16 +1,19 @@
 import { type DefaultCreationMode, useSettings } from '@/context/SettingsContext';
 import { useToast } from '@/context/ToastContext';
-import type { UpdateWorkspaceInput, WorkspaceMeta } from '@/types';
+import type { StorageDriverType, UpdateWorkspaceInput, WorkspaceMeta } from '@/types';
 import {
+  Archive,
   Check,
   Clipboard,
   Copy,
+  Database,
   FileCode,
   FolderCheck,
   FolderOpen,
   FolderSync,
   Hash,
   Layers,
+  Loader2,
   Sliders,
   Sparkles,
   Tag,
@@ -24,11 +27,13 @@ interface SettingsModalProps {
   onClose: () => void;
   hasDirectory: boolean;
   directoryName: string | null;
+  driverType?: StorageDriverType;
   pendingDirectoryName?: string;
   onPickDirectory: () => void;
   onRequestPendingPermission?: () => void;
   workspaceMeta: WorkspaceMeta | null;
   onUpdateWorkspace: (input: UpdateWorkspaceInput) => Promise<void>;
+  onExportWorkspace?: (onProgress?: (status: string) => void) => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -36,11 +41,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   hasDirectory,
   directoryName,
+  driverType = 'opfs-sandbox',
   pendingDirectoryName,
   onPickDirectory,
   onRequestPendingPermission,
   workspaceMeta,
   onUpdateWorkspace,
+  onExportWorkspace,
 }) => {
   const { settings, updateSettings, toggleGrouping } = useSettings();
   const { toast } = useToast();
@@ -49,6 +56,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [nameValue, setNameValue] = useState<string>(workspaceMeta?.name || '');
   const [descValue, setDescValue] = useState<string>(workspaceMeta?.description || '');
   const [hasCopiedId, setHasCopiedId] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportStatusText, setExportStatusText] = useState<string>('');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -113,6 +122,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleExportWorkspace = async () => {
+    if (!onExportWorkspace) return;
+    setIsExporting(true);
+    setExportStatusText('正在准备打包...');
+    try {
+      await onExportWorkspace((status) => {
+        setExportStatusText(status);
+      });
+      toast.success('全量工作区备份归档包导出成功！');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`导出备份失败: ${msg}`);
+    } finally {
+      setIsExporting(false);
+      setExportStatusText('');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-surface-overlay flex items-center justify-center p-4 select-none animate-in fade-in">
       {/* 弹窗核心卡片容器：通过 ref 绑定外部点击判定 */}
@@ -151,10 +178,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex flex-col">
                 <span className="font-sans font-bold text-xs text-main flex items-center gap-1.5">
                   <FolderOpen className="w-3.5 h-3.5 text-status-info" />
-                  <span>工作区档案与物理目录</span>
+                  <span>工作区档案与本地目录</span>
                 </span>
                 <span className="text-[11px] font-sans text-muted mt-0.5 leading-relaxed">
-                  元数据持久化于 .gallery/workspace.json，直连本地文件夹实现工件实时落盘。
+                  支持关联本地文件夹，实现工件与版本快照的实时本地落盘与管理。
                 </span>
               </div>
 
@@ -234,30 +261,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* 详细路径与挂载状态看板 */}
             <div className="p-2.5 rounded bg-surface border border-border flex flex-col gap-1.5 mt-1">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-muted">当前挂载状态:</span>
-                {pendingDirectoryName && !hasDirectory ? (
-                  <span className="text-status-warn font-semibold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    <span>待浏览器授权访问</span>
-                  </span>
-                ) : hasDirectory ? (
+                <span className="text-muted">存储驱动底座:</span>
+                {driverType === 'fsa-physical' ? (
                   <span className="text-status-success font-semibold flex items-center gap-1">
                     <FolderCheck className="w-3.5 h-3.5" />
-                    <span>已连接并实时同步</span>
+                    <span>本地文件夹直连</span>
                   </span>
                 ) : (
-                  <span className="text-muted flex items-center gap-1">
-                    <span>未关联（演示模式 / 内存沙箱）</span>
+                  <span className="text-status-info font-semibold flex items-center gap-1">
+                    <Database className="w-3.5 h-3.5" />
+                    <span>浏览器内置沙箱存储</span>
                   </span>
                 )}
               </div>
 
               {(directoryName || pendingDirectoryName) && (
                 <div className="flex items-center justify-between text-[11px] pt-1 border-t border-border/60">
-                  <span className="text-muted">物理目录:</span>
+                  <span className="text-muted">存储位置:</span>
                   <span className="font-mono font-bold text-main px-1.5 py-0.5 rounded bg-surface-subtle border border-border max-w-[280px] truncate">
                     {directoryName || pendingDirectoryName}
                   </span>
+                </div>
+              )}
+
+              {/* 全量工作区备份归档导出 */}
+              {onExportWorkspace && (
+                <div className="pt-2 border-t border-border/60 flex items-center justify-between">
+                  <span className="text-[11px] text-muted">全量数据备份:</span>
+                  <button
+                    type="button"
+                    disabled={isExporting}
+                    onClick={handleExportWorkspace}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-elevated hover:bg-surface border border-border rounded text-[11px] font-semibold text-main transition-colors disabled:opacity-50"
+                  >
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-status-info" />
+                        <span>{exportStatusText || '正在打包...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="w-3 h-3 text-status-info" />
+                        <span>导出全量工作区 (.zip)</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
             </div>

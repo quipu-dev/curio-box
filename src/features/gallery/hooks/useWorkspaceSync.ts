@@ -1,4 +1,6 @@
 import { useToast } from '@/context/ToastContext';
+import { downloadBlob } from '@/core/export/album-exporter';
+import { exportWorkspaceAsZip } from '@/core/export/workspace-exporter';
 import { galleryStorage } from '@/core/storage/fs-storage';
 import { buildAlbumView, resolveAlbumArtifacts } from '@/features/albums/album-resolver';
 import type {
@@ -6,6 +8,7 @@ import type {
   AlbumMeta,
   Artifact,
   ArtifactBundleMeta,
+  StorageDriverType,
   UpdateWorkspaceInput,
   WorkspaceMeta,
 } from '@/types';
@@ -21,14 +24,19 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
   const [albums, setAlbums] = useState<AlbumMeta[]>([]);
   const [workspaceMeta, setWorkspaceMeta] = useState<WorkspaceMeta | null>(null);
   const [hasDirectory, setHasDirectory] = useState<boolean>(false);
+  const [driverType, setDriverType] = useState<StorageDriverType>('opfs-sandbox');
   const [pendingHandle, setPendingHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
   const currentDirectoryName = useMemo(() => {
     if (hasDirectory) {
-      return galleryStorage.getDirectoryHandle()?.name || null;
+      const handle = galleryStorage.getDirectoryHandle();
+      if (driverType === 'opfs-sandbox') {
+        return '浏览器内置沙箱';
+      }
+      return handle?.name || null;
     }
     return null;
-  }, [hasDirectory]);
+  }, [hasDirectory, driverType]);
 
   /**
    * SWR 两段式工作区对齐
@@ -67,11 +75,13 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
       const result = await galleryStorage.restoreSavedHandle();
       if (isCancelled) return;
 
+      setDriverType(result.driverType);
+
       if (result.permission === 'granted' && result.handle) {
         setHasDirectory(true);
         setPendingHandle(null);
         await loadArtifactsSWR();
-      } else if (result.handle) {
+      } else if (result.handle && result.driverType === 'fsa-physical') {
         setPendingHandle(result.handle);
         await loadArtifactsSWR();
       } else {
@@ -95,8 +105,9 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
       ).requestPermission({ mode: 'readwrite' });
 
       if (perm === 'granted') {
-        galleryStorage.setDirectoryHandle(pendingHandle);
+        galleryStorage.setDirectoryHandle(pendingHandle, 'fsa-physical');
         setHasDirectory(true);
+        setDriverType('fsa-physical');
         setPendingHandle(null);
         await loadArtifactsSWR();
       }
@@ -110,12 +121,13 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
       const fsaWindow = window as unknown as WindowWithFSA;
       if (typeof fsaWindow.showDirectoryPicker === 'function') {
         const handle = await fsaWindow.showDirectoryPicker();
-        galleryStorage.setDirectoryHandle(handle);
+        galleryStorage.setDirectoryHandle(handle, 'fsa-physical');
         setHasDirectory(true);
+        setDriverType('fsa-physical');
         await loadArtifactsSWR();
-        toast.success(`成功关联目录: ${handle.name}`);
+        toast.success(`成功关联物理目录: ${handle.name}`);
       } else {
-        toast.warn('当前浏览器环境不支持 File System Access API，请使用 Chrome/Edge。');
+        toast.warn('当前环境不支持文件夹拾取，当前正运行于 OPFS 私有沙箱，数据已完全持久化。');
       }
     } catch (err: unknown) {
       const e = err as Error;
@@ -347,5 +359,15 @@ export function useWorkspaceSync(activeAlbumId: string | null) {
     handleSaveAlbum,
     handleDeleteAlbum,
     handleUpdateWorkspaceMeta,
+    driverType,
+    handleExportWorkspaceZip: async (onProgress?: (status: string) => void) => {
+      const handle = galleryStorage.getDirectoryHandle();
+      if (!handle) {
+        throw new Error('未检测到可导出的工作区');
+      }
+      const zipBlob = await exportWorkspaceAsZip(handle, onProgress);
+      const safeName = (workspaceMeta?.name || 'curio_workspace').replace(/[\\/:*?"<>|]/g, '_');
+      downloadBlob(zipBlob, `${safeName}_backup.zip`);
+    },
   };
 }
